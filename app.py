@@ -112,9 +112,28 @@ def index():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        # البحث عن المستخدم
+        user = User.query.filter_by(username=username).first()
+        
+        # التحقق من وجود المستخدم وصحة كلمة المرور باستخدام werkzeug مباشرة
+        if user and check_password_hash(user.password, password):
+            login_user(user)
+            session['branch_id'] = user.branch_id
+            flash(f'مرحباً {user.full_name}', 'success')
+            return redirect(url_for('dashboard'))
+        else:
+            flash('❌ اسم المستخدم أو كلمة المرور غير صحيحة', 'danger')
+            
+    return render_template('login.html')
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     
