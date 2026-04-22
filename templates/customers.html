@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}إدارة العملاء{% endblock %}
+{% block page_title %}إدارة العملاء{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-users text-primary"></i> قائمة العملاء</h5>
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addCustomerModal"><i class="fas fa-plus"></i> إضافة عميل</button>
+    </div>
+    <div class="card-body">
+        {% if customers %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr><th>#</th><th>الاسم</th><th>الهاتف</th><th class="text-center">عدد الفواتير</th><th>إجراءات</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in customers %}
+                    <tr>
+                        <td>{{ item.customer.id }}</td>
+                        <td>
+                            <a href="{{ url_for('customer_invoices', id=item.customer.id) }}" class="text-decoration-none fw-bold text-primary">
+                                <i class="fas fa-file-invoice me-1"></i> {{ item.customer.name }}
+                            </a>
+                        </td>
+                        <td>{{ item.customer.phone or '-' }}</td>
+                        <td class="text-center"><span class="badge bg-info text-dark">{{ item.inv_count }} فاتورة</span></td>
+                        <td><a href="{{ url_for('customer_statement', id=item.customer.id) }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-receipt"></i> كشف حساب</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5"><i class="fas fa-users fa-3x mb-3"></i><p>لا يوجد عملاء مسجلين</p></div>
+        {% endif %}
+    </div>
+</div>
+<div class="modal fade" id="addCustomerModal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content">
+        <form method="POST" action="{{ url_for('add_customer') }}">
+            <div class="modal-header"><h5 class="modal-title">إضافة عميل</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="mb-3"><label class="form-label">الاسم *</label><input type="text" name="name" class="form-control" required></div>
+                <div class="mb-3"><label class="form-label">الهاتف</label><input type="text" name="phone" class="form-control"></div>
+                <div class="mb-3"><label class="form-label">البريد</label><input type="email" name="email" class="form-control"></div>
+                <div class="mb-3"><label class="form-label">العنوان</label><input type="text" name="address" class="form-control"></div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button><button type="submit" class="btn btn-primary">حفظ</button></div>
+        </form>
+    </div></div>
+</div>
+{% endblock %}

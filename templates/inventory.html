@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}إدارة المخزون{% endblock %}
+{% block page_title %}📦 إدارة المخزون{% endblock %}
+
+{% block content %}
+<div class="card">
+   <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <h5 class="mb-0">
+        <i class="fas fa-boxes text-primary"></i> المخزون الحالي
+        <!-- ✅ العداد الجديد -->
+        <span class="badge bg-primary ms-2 fs-6" title="عدد الكتب الظاهرة في القائمة">
+            {{ inventory | length }}
+        </span>
+    </h5>
+
+    <!-- الأزرار (فلتر + إضافة) تبقى كما هي -->
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+        <div class="btn-group btn-group-sm me-2" role="group">
+            <a href="{{ url_for('inventory') }}" class="btn btn-outline-primary {% if not request.args.get('filter') %}active{% endif %}">الكل</a>
+            <a href="{{ url_for('inventory', filter='low') }}" class="btn btn-outline-warning {% if request.args.get('filter') == 'low' %}active{% endif %}">منخفض (&lt;5)</a>
+            <a href="{{ url_for('inventory', filter='zero') }}" class="btn btn-outline-danger {% if request.args.get('filter') == 'zero' %}active{% endif %}">منتهي (0)</a>
+        </div>
+        
+        {% if current_user.role in ['admin', 'manager'] %}
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addStockModal">
+            <i class="fas fa-plus"></i> إضافة مخزون
+        </button>
+        {% endif %}
+    </div>
+</div>
+    
+    <div class="card-body">
+        <!-- تنبيه المخزون المنخفض -->
+        {% set low_stock_items = inventory | selectattr('0.quantity', 'le', 5) | list %}
+        {% if low_stock_items and request.args.get('filter') != 'zero' %}
+        <div class="alert alert-warning alert-dismissible fade show mb-3" role="alert">
+            <h6 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> تنبيه: مخزون منخفض</h6>
+            <p class="mb-0">يوجد <strong>{{ low_stock_items | length }}</strong> كتاب/كتب بكمية أقل من أو تساوي 5:</p>
+            <ul class="mb-0 mt-2">
+                {% for inv_item, book in low_stock_items %}
+                <li>{{ book.title }} - الكمية: <strong class="text-danger">{{ inv_item.quantity }}</strong></li>
+                {% endfor %}
+            </ul>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endif %}
+
+        <!-- الجدول الرئيسي -->
+        {% if inventory %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>ISBN</th>
+                        <th>عنوان الكتاب</th>
+                        <th>المؤلف</th>
+                        <th>الناشر</th>
+                        <th>سعر البيع</th>
+                        <th>الكمية</th>
+                        <th>آخر تحديث</th>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <th>إجراءات</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for inv_item, book in inventory %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td><code>{{ book.isbn or '-' }}</code></td>
+                        <td><strong>{{ book.title }}</strong></td>
+                        <td>{{ book.author.name if book.author else '-' }}</td>
+                        <td>{{ book.publisher.name if book.publisher else '-' }}</td>
+                        <td>{{ "%.2f"|format(book.selling_price) }} {{ settings.currency if settings else 'د.إ' }}</td>
+                        <td>
+                            <span class="badge {% if inv_item.quantity <= 0 %}bg-danger{% elif inv_item.quantity <= 5 %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                                {{ inv_item.quantity }}
+                            </span>
+                        </td>
+                        <td>{{ inv_item.last_updated.strftime('%Y-%m-%d %H:%M') if inv_item.last_updated else '-' }}</td>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                data-bs-toggle="modal"
+                                data-bs-target="#editStockModal"
+                                data-id="{{ inv_item.id }}"
+                                data-book-name="{{ book.title }}"
+                                data-current-qty="{{ inv_item.quantity }}">
+                                <i class="fas fa-edit"></i> تعديل
+                            </button>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="fas fa-box-open fa-3x mb-3"></i>
+            <p>لا يوجد مخزون مسجل حالياً أو لا توجد نتائج مطابقة للفلتر</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- مودال إضافة مخزون -->
+<div class="modal fade" id="addStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_stock') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-plus-circle text-success"></i> إضافة مخزون جديد</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">اختر الكتاب *</label>
+                        <select name="book_id" id="bookSelect" class="form-select" required>
+                            <option value="">-- ابحث واختر كتاباً --</option>
+                            {% for book in books %}
+                            <option value="{{ book.id }}">{{ book.title }} {% if book.isbn %}({{ book.isbn }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الكمية *</label>
+                        <input type="number" name="quantity" class="form-control" min="1" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success">حفظ</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- مودال تعديل المخزون -->
+<div class="modal fade" id="editStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="editStockForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">تعديل المخزون</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editItemId" name="id">
+                    <div class="mb-3">
+                        <label class="form-label">الكتاب</label>
+                        <input type="text" id="editBookName" class="form-control" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الكمية الحالية</label>
+                        <input type="number" id="currentQuantity" class="form-control" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الكمية الجديدة *</label>
+                        <input type="number" name="quantity" id="newQuantity" class="form-control" min="0" required>
+                        <div class="form-text">أدخل الكمية الإجمالية الجديدة</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-warning">تحديث</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    // تفعيل البحث في قائمة الإضافة
+    $('#bookSelect').select2({ placeholder: "ابحث عن كتاب...", width: '100%' });
+    
+    // ✅ تعبئة مودال التعديل مع فحص صارم للمعرف
+    $('#editStockModal').on('show.bs.modal', function (event) {
+        const button = $(event.relatedTarget);
+        const inventoryId = button.data('id');
+        const modal = $(this);
+
+        // فحص المعرف لمنع الروابط المعطلة
+        if (!inventoryId || inventoryId === 'None' || inventoryId === 'undefined' || inventoryId === '') {
+            alert('⚠️ خطأ: لم يتم تحديد معرف السجل! تأكد من تحديث الصفحة (Ctrl+F5).');
+            console.error('معرّف السجل مفقود أو غير صالح:', button.data());
+            return; // إيقاف التنفيذ لمنع الإرسال الخاطئ
+        }
+
+        modal.find('#editItemId').val(inventoryId);
+        modal.find('#editBookName').val(button.data('book-name'));
+        modal.find('#currentQuantity').val(button.data('current-qty'));
+        modal.find('#newQuantity').val(button.data('current-qty'));
+        
+        // بناء الرابط الصحيح بدقة
+        const actionUrl = '/inventory/' + inventoryId + '/update';
+        modal.find('#editStockForm').attr('action', actionUrl);
+        console.log('✅ تم تعيين رابط التحديث إلى:', actionUrl);
+    });
+});
+</script>
+{% endblock %}

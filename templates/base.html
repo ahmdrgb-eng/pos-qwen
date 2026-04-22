@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{% block title %}نظام المكتبة{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        .sidebar { 
+            height: 100vh; 
+            background: linear-gradient(180deg, #1e3c72 0%, #2a5298 100%); 
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1); 
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 250px;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 15px 10px 80px 10px;
+        }
+        
+        .sidebar .nav-link { 
+            color: rgba(255,255,255,0.85); 
+            padding: 12px 20px; 
+            margin: 4px 0; 
+            border-radius: 8px; 
+            transition: all 0.3s; 
+            font-size: 0.95rem; 
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { 
+            background: rgba(255,255,255,0.15); 
+            color: #fff; 
+            transform: translateX(-3px); 
+        }
+        .sidebar .nav-link i { margin-left: 10px; width: 20px; text-align: center; }
+        
+        .sidebar-divider { border-top: 1px solid rgba(255,255,255,0.2); margin: 10px 0; }
+        .sidebar-label { color: rgba(255,255,255,0.5); font-size: 0.75rem; padding: 0 20px; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .notification-badge { 
+            position: absolute; 
+            top: 8px; 
+            right: 10px; 
+            background: #dc3545; 
+            color: white; 
+            border-radius: 50%; 
+            padding: 2px 6px; 
+            font-size: 10px; 
+            min-width: 18px; 
+            text-align: center; 
+            border: 2px solid #1e3c72; 
+        }
+        
+        .main-wrapper {
+            margin-right: 250px;
+            transition: margin-right 0.3s ease;
+            min-height: 100vh;
+        }
+        
+        .top-bar { 
+            background: #fff; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05); 
+            padding: 12px 20px; 
+            position: sticky;
+            top: 0;
+            z-index: 999;
+        }
+        
+        .user-info { display: flex; align-items: center; gap: 10px; }
+        .user-avatar { 
+            width: 35px; height: 35px; 
+            border-radius: 50%; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            color: white; 
+            font-weight: bold; 
+            font-size: 1rem; 
+        }
+        
+        .main-content { padding: 20px; }
+        .page-title { font-size: 1.5rem; font-weight: 700; color: #1e3c72; margin-bottom: 20px; }
+        .card { border: none; border-radius: 12px; box-shadow: 0 2px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        
+        .sidebar-toggle {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #1e3c72;
+            cursor: pointer;
+            padding: 5px 10px;
+        }
+        
+        @media (max-width: 992px) {
+            .sidebar { transform: translateX(100%); width: 280px; }
+            .sidebar.active { transform: translateX(0); }
+            .main-wrapper { margin-right: 0; }
+            .sidebar-toggle { display: block; }
+            .user-info .d-none.d-md-block { display: none !important; }
+            .user-avatar { width: 30px; height: 30px; font-size: 0.9rem; }
+        }
+        
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+        .sidebar-overlay.active { display: block; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    
+    <div class="sidebar" id="sidebar">
+        <div class="text-center mb-4 pb-2 border-bottom border-white border-opacity-10 pt-3">
+    {% if settings and settings.logo_path %}
+    <div class="logo-container mb-2">
+        <img src="{{ url_for('static', filename=settings.logo_path) }}" 
+             alt="{{ settings.company_name or 'نظام المكتبة' }}" 
+             class="img-fluid" 
+             style="max-height: 60px; filter: brightness(0) invert(1);"
+             onerror="this.style.display='none'; console.log('❌ الشعار غير موجود:', this.src)">
+    </div>
+    {% else %}
+    <!-- شعار افتراضي إذا لم يوجد -->
+    <div class="mb-2">
+        <i class="fas fa-book-open fa-2x text-white opacity-90"></i>
+    </div>
+    {% endif %}
+    
+    <h5 class="text-white mb-0 fw-bold" style="font-size: 1.1rem;">
+        {{ settings.company_name if settings else 'نظام إدارة المكتبة' }}
+    </h5>
+    
+    {% if settings and settings.phone %}
+    <small class="text-white text-opacity-75 d-block mt-1">
+        <i class="fas fa-phone ms-1"></i>{{ settings.phone }}
+    </small>
+    {% endif %}
+</div>
+        
+        <ul class="nav flex-column px-2">
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> لوحة التحكم</a></li>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'pos' %}active{% endif %}" href="{{ url_for('pos') }}"><i class="fas fa-cash-register"></i> نقطة البيع</a></li>
+            
+            <div class="sidebar-divider"></div><div class="sidebar-label">إدارة العمليات</div>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'inventory' %}active{% endif %}" href="{{ url_for('inventory') }}"><i class="fas fa-boxes"></i> المخزون</a></li>
+            <!-- 📦 قسم الموردين والناشرين (موحد) -->
+<li class="nav-item">
+    <a class="nav-link {% if request.endpoint in ['suppliers', 'publishers'] %}active{% endif %}" href="{{ url_for('suppliers') }}">
+        <i class="fas fa-truck-loading"></i> الموردين / الناشرين
+    </a>
+</li>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'purchase_invoices' %}active{% endif %}" href="{{ url_for('purchase_invoices') }}"><i class="fas fa-file-invoice"></i> فواتير الشراء</a></li>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'transfer_history' %}active{% endif %}" href="{{ url_for('transfer_history') }}"><i class="fas fa-exchange-alt"></i> سجل التحويلات<span class="notification-badge" id="transferBadge" style="display:none;">0</span></a></li>
+            
+            <div class="sidebar-divider"></div><div class="sidebar-label">المحاسبة</div>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'accounts' %}active{% endif %}" href="{{ url_for('accounts') }}"><i class="fas fa-sitemap"></i> شجرة الحسابات</a></li>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'expenses' %}active{% endif %}" href="{{ url_for('expenses') }}"><i class="fas fa-receipt"></i> المصروفات</a></li>
+            
+            <div class="sidebar-divider"></div><div class="sidebar-label">البيانات</div>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'invoices' %}active{% endif %}" href="{{ url_for('invoices') }}"><i class="fas fa-file-invoice-dollar"></i> فواتير المبيعات</a></li>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'customers' %}active{% endif %}" href="{{ url_for('customers') }}"><i class="fas fa-users"></i> العملاء</a></li>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'books' %}active{% endif %}" href="{{ url_for('books') }}"><i class="fas fa-book"></i> الكتب</a></li>
+            {% if current_user.role in ['admin', 'manager'] %}
+           <li class="nav-item"><a class="nav-link {% if request.endpoint == 'authors' %}active{% endif %}" href="{{ url_for('authors') }}"><i class="fas fa-user-edit"></i> المؤلفون</a></li>
+            <!-- 📦 قسم الموردين والناشرين (موحد) -->
+
+    </li>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'categories' %}active{% endif %}" href="{{ url_for('categories') }}"><i class="fas fa-tags"></i> التصنيفات</a></li>
+            {% endif %}
+            <div class="sidebar-divider"></div><div class="sidebar-label">التقارير</div>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'income_statement' %}active{% endif %}" href="{{ url_for('income_statement') }}"><i class="fas fa-chart-line"></i> قائمة الدخل</a></li>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'balance_sheet' %}active{% endif %}" href="{{ url_for('balance_sheet') }}"><i class="fas fa-balance-scale"></i> الميزانية العمومية</a></li>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'reports' %}active{% endif %}" href="{{ url_for('reports') }}"><i class="fas fa-chart-bar"></i> تقارير المبيعات</a></li>
+            
+            {% if current_user.role == 'admin' %}
+<div class="sidebar-divider"></div><div class="sidebar-label">النظام</div>
+<li class="nav-item"><a class="nav-link {% if request.endpoint == 'branches' %}active{% endif %}" href="{{ url_for('branches') }}"><i class="fas fa-building"></i> الفروع</a></li>
+<li class="nav-item"><a class="nav-link {% if request.endpoint == 'users' %}active{% endif %}" href="{{ url_for('users') }}"><i class="fas fa-users-cog"></i> المستخدمين</a></li>
+{% endif %}
+            {% if current_user.role == 'admin' %}
+<div class="sidebar-divider"></div>
+<div class="sidebar-label">⚙️ النظام</div>
+<li class="nav-item">
+    <a class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}" href="{{ url_for('settings') }}">
+        <i class="fas fa-cog"></i> الإعدادات
+    </a>
+</li>
+{% endif %}
+            <div class="sidebar-divider"></div>
+            <li class="nav-item"><a class="nav-link text-warning" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</a></li>
+        </ul>
+    </div>
+
+    <div class="main-wrapper">
+        <div class="top-bar d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2">
+                <button class="sidebar-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+                <div class="text-muted bg-light px-2 py-1 rounded d-flex align-items-center d-none d-sm-flex">
+                    <i class="far fa-clock ms-2"></i><span id="currentDateTime" class="fw-bold small">{{ datetime.now().strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+            </div>
+            
+            <div class="user-info">
+                <div class="text-end d-none d-md-block">
+                    <div class="fw-bold small">{{ current_user.full_name }}</div>
+                    <small class="text-muted" style="font-size: 11px;">
+                        {% if current_user.role == 'admin' %}المدير العام
+                        {% elif current_user.role == 'manager' %}مدير الفرع
+                        {% else %}كاشير{% endif %}
+                    </small>
+                </div>
+                <div class="user-avatar">{{ current_user.full_name[0] if current_user.full_name else 'U' }}</div>
+                <div class="vr d-none d-md-block"></div>
+                <div class="text-end d-none d-md-block">
+                    <div class="fw-bold text-primary small">
+                        {% set branch = current_user.branch %}
+                        {{ branch.name if branch else 'الفرع الرئيسي' }}
+                    </div>
+                    <small class="text-muted" style="font-size: 11px;">الفرع الحالي</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <h1 class="page-title">{% block page_title %}{% endblock %}</h1>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'danger' else category }} alert-dismissible fade show shadow-sm" role="alert">{{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
+            document.querySelector('.sidebar-overlay').classList.toggle('active');
+        }
+        document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+            link.addEventListener('click', () => { if (window.innerWidth < 992) toggleSidebar(); });
+        });
+        
+        function updateDateTime() {
+            fetch('/api/current-time').then(r => r.text()).then(time => { const el = document.getElementById('currentDateTime'); if (el) el.textContent = time; }).catch(() => {});
+        }
+        setInterval(updateDateTime, 60000);
+        
+        function checkTransferAlerts() {
+            fetch('/api/check-transfer-alerts').then(r => r.json()).then(data => {
+                const badge = document.getElementById('transferBadge');
+                if (badge) { if (data.count > 0) { badge.textContent = data.count; badge.style.display = 'inline-block'; } else { badge.style.display = 'none'; } }
+            }).catch(() => {});
+        }
+        document.addEventListener('DOMContentLoaded', function() { checkTransferAlerts(); setInterval(checkTransferAlerts, 30000); });
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

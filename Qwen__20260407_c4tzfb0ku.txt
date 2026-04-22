@@ -1,0 +1,20 @@
+bookstore/
+├── app.py                 # التطبيق الرئيسي
+├── database.py            # إعداد قاعدة البيانات
+├── models.py              # نماذج البيانات
+├── requirements.txt       # المتطلبات
+├── templates/
+│   ├── base.html          # القالب الأساسي
+│   ├── login.html         # تسجيل الدخول
+│   ├── dashboard.html     # لوحة التحكم
+│   ├── books.html         # إدارة الكتب
+│   ├── pos.html           # نقطة البيع
+│   ├── branches.html      # إدارة الفروع
+│   ├── users.html         # إدارة المستخدمين
+│   ├── customers.html     # إدارة العملاء
+│   ├── reports.html       # التقارير
+│   ├── inventory.html     # إدارة المخزون
+│   └── invoices.html      # الفواتير
+└── static/
+    ├── css/style.css      # الأنماط
+    └── js/app.js          # الجافاسكربت

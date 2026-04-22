@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}إدارة الكتب{% endblock %}
+{% block page_title %}📚 إدارة الكتب{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2 py-3">
+        <h5 class="mb-0 fw-bold text-primary d-flex align-items-center">
+            <i class="fas fa-book me-2"></i> قائمة الكتب
+            <!-- ✅ عداد الكتب -->
+            <span class="badge bg-primary ms-2 fs-6">{{ books | length }}</span>
+        </h5>
+        
+        <div class="d-flex gap-2">
+            {% if current_user.role in ['admin', 'manager'] %}
+            <button class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#importModal">
+                <i class="fas fa-file-excel"></i> استيراد Excel
+            </button>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addBookModal">
+                <i class="fas fa-plus"></i> إضافة كتاب جديد
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 text-center" id="booksTable">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="text-end ps-4">العنوان / ISBN</th>
+                        <th>المؤلف</th>
+                        <th>التصنيف</th>
+                        <th>سعر التكلفة</th>
+                        <th>سعر البيع</th>
+                        <th>المخزون الحالي</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody class="small">
+                    {% if books %}
+                    {% for book in books %}
+                    <tr>
+                        <td class="text-end ps-4">
+                            <div class="fw-bold text-dark">{{ book.title }}</div>
+                            <small class="text-muted" style="font-size: 11px;">ISBN: {{ book.isbn or '-' }}</small>
+                        </td>
+                        <td>{{ book.author.name if book.author else '-' }}</td>
+                        <td><span class="badge bg-info bg-opacity-10 text-info px-2">{{ book.category.name if book.category else '-' }}</span></td>
+                        <td>{{ "%.2f"|format(book.cost_price) }}</td>
+                        <td class="fw-bold text-primary">{{ "%.2f"|format(book.selling_price) }}</td>
+                        <td>
+                            <!-- عرض المخزون للفرع الحالي -->
+                            {% set stock = stock_map.get(book.id, 0) %}
+                            {% if stock > 5 %}
+                                <span class="badge bg-success bg-opacity-10 text-success px-3 py-2 rounded-pill">{{ stock }}</span>
+                            {% elif stock > 0 %}
+                                <span class="badge bg-warning bg-opacity-10 text-warning px-3 py-2 rounded-pill">{{ stock }}</span>
+                            {% else %}
+                                <span class="badge bg-danger bg-opacity-10 text-danger px-3 py-2 rounded-pill">نفذ</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <!-- ✅ زر كشف الحساب (الجديد) -->
+                                <a href="{{ url_for('book_statement', id=book.id) }}" class="btn btn-outline-info" title="كشف مبيعات الكتاب">
+                                    <i class="fas fa-chart-bar"></i>
+                                </a>
+                                
+                                {% if current_user.role in ['admin', 'manager'] %}
+                                <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editBookModal{{ book.id }}" title="تعديل البيانات">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                {% endif %}
+                                
+                                {% if current_user.role == 'admin' %}
+                                <form method="POST" action="{{ url_for('delete_book', id=book.id) }}" class="d-inline" onsubmit="return confirm('هل أنت متأكد من تعطيل هذا الكتاب؟');">
+                                    <button type="submit" class="btn btn-outline-danger" title="تعطيل/حذف">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Modal تعديل الكتاب (مضمن داخل الحلقة لكل كتاب) -->
+                    {% if current_user.role in ['admin', 'manager'] %}
+                    <div class="modal fade" id="editBookModal{{ book.id }}" tabindex="-1">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <form method="POST" action="{{ url_for('edit_book', id=book.id) }}">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">تعديل بيانات: {{ book.title }}</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="row g-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label">عنوان الكتاب</label>
+                                                <input type="text" name="title" class="form-control" value="{{ book.title }}" required>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">ISBN</label>
+                                                <input type="text" name="isbn" class="form-control" value="{{ book.isbn or '' }}">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">المؤلف</label>
+                                                <select name="author_id" class="form-select">
+                                                    {% for author in authors %}
+                                                    <option value="{{ author.id }}" {% if book.author_id == author.id %}selected{% endif %}>{{ author.name }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">التصنيف</label>
+                                                <select name="category_id" class="form-select">
+                                                    {% for cat in categories %}
+                                                    <option value="{{ cat.id }}" {% if book.category_id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">الناشر</label>
+                                                <select name="publisher_id" class="form-select">
+                                                    {% for pub in publishers %}
+                                                    <option value="{{ pub.id }}" {% if book.publisher_id == pub.id %}selected{% endif %}>{{ pub.name }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label">سعر التكلفة</label>
+                                                <input type="number" step="0.01" name="cost_price" class="form-control" value="{{ book.cost_price }}">
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label">سعر البيع</label>
+                                                <input type="number" step="0.01" name="selling_price" class="form-control" value="{{ book.selling_price }}">
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label">نسبة الخصم %</label>
+                                                <input type="number" step="0.01" name="discount_percent" class="form-control" value="{{ book.discount_percent or 0 }}">
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label">عدد الصفحات</label>
+                                                <input type="number" name="pages" class="form-control" value="{{ book.pages or 0 }}">
+                                            </div>
+                                            <div class="col-12">
+                                                <label class="form-label">وصف مختصر</label>
+                                                <textarea name="description" class="form-control" rows="2">{{ book.description or '' }}</textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                                        <button type="submit" class="btn btn-primary">حفظ التغييرات</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="py-5 text-muted">
+                            <i class="fas fa-book-open fa-3x mb-3 opacity-25"></i><br>
+                            لا توجد كتب مسجلة حالياً. ابدأ بإضافة كتاب جديد أو استيراد ملف Excel.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal إضافة كتاب جديد -->
+{% if current_user.role in ['admin', 'manager'] %}
+<div class="modal fade" id="addBookModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_book') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">إضافة كتاب جديد</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">عنوان الكتاب <span class="text-danger">*</span></label>
+                            <input type="text" name="title" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">ISBN</label>
+                            <input type="text" name="isbn" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">المؤلف</label>
+                            <select name="author_id" class="form-select">
+                                <option value="">اختر المؤلف...</option>
+                                {% for author in authors %}<option value="{{ author.id }}">{{ author.name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">التصنيف</label>
+                            <select name="category_id" class="form-select">
+                                <option value="">اختر التصنيف...</option>
+                                {% for cat in categories %}<option value="{{ cat.id }}">{{ cat.name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">الناشر</label>
+                            <select name="publisher_id" class="form-select">
+                                <option value="">اختر الناشر...</option>
+                                {% for pub in publishers %}<option value="{{ pub.id }}">{{ pub.name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">سعر التكلفة</label>
+                            <input type="number" step="0.01" name="cost_price" class="form-control" value="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">سعر البيع</label>
+                            <input type="number" step="0.01" name="selling_price" class="form-control" value="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">الكمية الأولية</label>
+                            <input type="number" name="quantity" class="form-control" value="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">نسبة الخصم %</label>
+                            <input type="number" step="0.01" name="discount_percent" class="form-control" value="0">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">إضافة الكتاب</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal استيراد Excel -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('import_books') }}" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">استيراد كتب من Excel</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle"></i> يجب أن يحتوي الملف على الأعمدة: Title, ISBN, Author, Cost Price, Selling Price, Quantity
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">اختر الفرع المستهدف</label>
+                        <select name="target_branch_id" class="form-select">
+                            {% for branch in branches %}
+                            <option value="{{ branch.id }}" {% if branch.id == session.get('branch_id') %}selected{% endif %}>{{ branch.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ملف Excel (.xlsx)</label>
+                        <input type="file" name="file" class="form-control" accept=".xlsx, .xls" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success">بدء الاستيراد</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// تفعيل البحث الفوري في جدول الكتب
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.querySelector('#booksTable').previousElementSibling?.querySelector('input[type="text"]');
+    // يمكنك إضافة كود بحث هنا إذا أردت شريط بحث منفصل
+});
+</script>
+{% endblock %}

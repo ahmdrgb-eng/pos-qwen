@@ -1,0 +1,512 @@
+{% extends "base.html" %}
+{% block title %}نقطة البيع{% endblock %}
+{% block page_title %}🛒 نقطة البيع (POS){% endblock %}
+
+{% block extra_css %}
+<style>
+    @media (max-width: 768px) {
+        .pos-search-bar .form-control-lg { font-size: 16px; padding: 0.75rem; }
+        .pos-card { margin-bottom: 15px; }
+        .book-card { padding: 10px; }
+        .cart-item { padding: 8px; font-size: 14px; }
+        .btn-lg { padding: 0.75rem 1rem; font-size: 1rem; }
+    }
+    /* ✅ تنسيق قالب عرض الأسعار الدقيق لـ A4 */
+    #quotationTemplate {
+        display: none;
+        direction: ltr;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        color: #333;
+        line-height: 1.35;
+        width: 210mm;
+        min-height: 297mm;
+        padding: 12mm 15mm;
+        box-sizing: border-box;
+        background: #fff;
+        font-size: 10pt;
+    }
+    #quotationTemplate .q-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; border-bottom: 2px solid #333; padding-bottom: 12px; }
+    #quotationTemplate .q-info div { margin-bottom: 4px; font-size: 10pt; }
+    #quotationTemplate .q-label { font-weight: bold; width: 100px; display: inline-block; color: #555; }
+    #quotationTemplate .q-company { text-align: right; }
+    #quotationTemplate .q-company h2 { margin: 0 0 4px; font-size: 16pt; font-weight: bold; color: #222; }
+    #quotationTemplate .q-company p { margin: 2px 0; font-size: 9pt; color: #666; }
+    #quotationTemplate .q-logo { max-width: 90px; margin-bottom: 8px; float: right; }
+    
+    #quotationTemplate table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 9pt; }
+    #quotationTemplate th, #quotationTemplate td { padding: 5px 4px; border: 1px solid #bbb; text-align: center; vertical-align: middle; }
+    #quotationTemplate th { background: #f4f4f4; font-weight: 600; color: #333; }
+    #quotationTemplate .desc-cell { text-align: left !important; padding-left: 8px !important; }
+    #quotationTemplate .item-title { font-weight: 600; display: block; }
+    #quotationTemplate .item-isbn { font-size: 8pt; color: #888; }
+
+    #quotationTemplate .q-footer { display: flex; justify-content: space-between; margin-top: 10px; align-items: flex-start; }
+    #quotationTemplate .q-bank { width: 48%; font-size: 9pt; }
+    #quotationTemplate .q-bank h3 { font-size: 10pt; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin: 0 0 6px; }
+    #quotationTemplate .q-bank p { margin: 3px 0; }
+    
+    #quotationTemplate .q-totals { width: 45%; }
+    #quotationTemplate .q-totals table { width: 100%; margin: 0; border: none; }
+    #quotationTemplate .q-totals td { border: 1px solid #bbb; padding: 5px 8px; border-left: none; }
+    #quotationTemplate .q-totals tr:last-child td { border-left: 1px solid #bbb; }
+    #quotationTemplate .q-totals .total-row { background: #eee; font-weight: bold; }
+    #quotationTemplate .q-note { margin-top: 15px; font-size: 8pt; color: #999; border-top: 1px solid #eee; padding-top: 6px; text-align: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <div class="col-md-7">
+        <div class="card shadow-sm mb-3 border-primary border-2 pos-card">
+            <div class="card-body">
+                <label class="form-label fw-bold text-primary mb-1">🔍 البحث أو مسح الباركود</label>
+                <div class="input-group input-group-lg pos-search-bar">
+                    <span class="input-group-text bg-white border-end-0 ps-3"><i class="fas fa-search text-muted" id="searchIcon"></i></span>
+                    <input type="text" id="searchBarcodeInput" class="form-control border-start-0 ps-0" placeholder="اكتب اسم الكتاب أو امسح الباركود (اضغط Enter)..." autocomplete="off" autofocus>
+                    <button class="btn btn-primary px-3 px-md-4" type="button" onclick="handleSearchOrBarcode()"><i class="fas fa-plus me-1 d-none d-sm-inline"></i> إضافة</button>
+                </div>
+                <small class="text-muted mt-2 d-block"><i class="fas fa-lightbulb"></i> <strong>بحث:</strong> اكتب للفلترة الفورية | <strong>باركود:</strong> وجه القارئ أو اكتب ISBN واضغط Enter</small>
+            </div>
+        </div>
+        <div class="card shadow-sm pos-card">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center py-2 py-md-3">
+                <h6 class="mb-0 fw-bold">📚 الكتب المتاحة</h6>
+                <span class="badge bg-primary" id="booksCount">0 كتاب</span>
+            </div>
+            <div class="card-body p-0">
+                <div id="booksGrid" class="row g-2 p-2" style="max-height: 600px; overflow-y: auto;"></div>
+                <div id="noBooksMsg" class="text-center text-muted py-5" style="display:none;"><i class="fas fa-book fa-3x mb-3 opacity-25"></i><p>لا توجد كتب مطابقة</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-5">
+        <div class="card shadow-sm bg-light h-100 pos-card">
+            <div class="card-body d-flex flex-column">
+                <h5 class="card-title fw-bold mb-3 text-center">📋 تفاصيل الفاتورة</h5>
+                
+                <div class="mb-3 p-2 bg-white rounded shadow-sm">
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label fw-bold small mb-1">نوع الدفع</label>
+                            <select id="invoiceType" class="form-select form-select-sm" onchange="updateInvoiceType()">
+                                <option value="cash">💵 نقدي</option><option value="card">💳 بطاقة</option><option value="transfer">🏦 تحويل</option><option value="credit">📝 آجل</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-bold small mb-1">العميل</label>
+                            <select id="customerSelect" class="form-select form-select-sm">
+                                <option value="">👤 عام</option>
+                                {% for c in customers %}<option value="{{ c.id }}">{{ c.name }} {% if c.phone %}({{ c.phone }}){% endif %}</option>{% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3 p-2 bg-white rounded shadow-sm">
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label fw-bold small mb-1">خصم %</label>
+                            <input type="number" id="discountPct" class="form-control form-control-sm text-end" value="0" min="0" step="0.01" onchange="calcTotal()">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-bold small mb-1">خصم نقدي</label>
+                            <input type="number" id="cashDiscount" class="form-control form-control-sm text-end" value="0" min="0" step="0.01" onchange="calcTotal()">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold small mb-1">مصاريف التوصيل (اختياري)</label>
+                            <input type="number" id="deliveryFee" class="form-control form-control-sm text-end" value="0" min="0" step="0.01" onchange="calcTotal()">
+                        </div>
+                    </div>
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="saveInvoiceCheck" checked onchange="toggleExportButtons()">
+                        <label class="form-check-label small" for="saveInvoiceCheck">💾 حفظ الفاتورة في السجل</label>
+                    </div>
+                </div>
+
+                <!-- أزرار التصدير -->
+                <div id="exportButtons" class="d-none mt-2 row g-2">
+                    <div class="col-6">
+                        <button class="btn btn-outline-danger w-100 btn-sm" onclick="generateQuotationPDF()">
+                            <i class="fas fa-file-pdf"></i> تصدير PDF
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <button class="btn btn-outline-success w-100 btn-sm" onclick="generateQuotationExcel()">
+                            <i class="fas fa-file-excel"></i> تصدير Excel
+                        </button>
+                    </div>
+                </div>
+
+                <div id="emptyCart" class="text-center py-3"><i class="fas fa-shopping-basket fa-2x text-muted mb-2 opacity-25"></i><p class="text-muted mb-0 small">السلة فارغة</p></div>
+                <div id="cartItems" style="display:none; max-height: 200px; overflow-y: auto;"></div>
+
+                <div class="mt-auto pt-2 border-top">
+                    <div class="d-flex justify-content-between small mb-1"><span>المجموع:</span><span id="subTotal">0.00</span></div>
+                    <div class="d-flex justify-content-between small mb-1 text-danger"><span>الخصم الكلي:</span><span id="totalDiscount">0.00</span></div>
+                    <div class="d-flex justify-content-between small mb-1 text-success"><span>الضريبة (5%):</span><span id="tax">0.00</span></div>
+                    <div class="d-flex justify-content-between small mb-2 text-info"><span>التوصيل:</span><span id="delivery">0.00</span></div>
+                    <hr class="my-1">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="h5 fw-bold">الإجمالي:</span>
+                        <span class="h4 fw-bold text-primary" id="grandTotal">0.00</span>
+                    </div>
+                    <button class="btn btn-success w-100 mb-2 btn-lg" onclick="checkout()"><i class="fas fa-check-circle"></i> إتمام البيع وطباعة</button>
+                    <button class="btn btn-outline-danger w-100" onclick="clearCart()"><i class="fas fa-trash"></i> تفريغ السلة</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 📄 قالب عرض الأسعار المخفي -->
+<div id="quotationTemplate">
+    <div class="q-header">
+        <div class="q-info">
+            <h1 style="font-size: 22px; font-weight: 800; margin: 0 0 12px; color: #222; text-transform: uppercase;">عرض أسعار</h1>
+            <div><span class="q-label">رقم العرض:</span> <strong id="qRef"></strong></div>
+            <div><span class="q-label">التاريخ:</span> <strong id="qDate"></strong></div>
+            <div><span class="q-label">العميل:</span> <strong id="qClient"></strong></div>
+        </div>
+        <div class="q-company">
+            <div id="qLogo" class="q-logo"></div>
+            <h2 id="qCompany"></h2>
+            <p id="qAddress"></p>
+            <p id="qPhone"></p>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width:30px;">#</th>
+                <th style="text-align:left;">ITEM DESCRIPTION</th>
+                <th style="width:35px;">QTY</th>
+                <th style="width:70px;">UNIT PRICE</th>
+                <th style="width:70px;">DISCOUNT</th>
+                <th style="width:70px;">AMOUNT</th>
+                <th style="width:50px;">TAX</th>
+                <th style="width:60px;">TAX AMT</th>
+                <th style="width:70px;">TOTAL</th>
+            </tr>
+        </thead>
+        <tbody id="qItems"></tbody>
+    </table>
+
+    <div class="q-footer">
+        <div class="q-bank">
+            <h3>Bank Details</h3>
+            <p><strong>Account Title:</strong> <span id="qBankTitle"></span></p>
+            <p><strong>Account Number:</strong> <span id="qBankAcc"></span></p>
+            <p><strong>IBAN:</strong> <span id="qBankIban"></span></p>
+            <p><strong>Bank Name:</strong> <span id="qBankName"></span></p>
+        </div>
+        <div class="q-totals">
+            <table>
+                <tr><td>Sub-total</td><td id="qSub"></td></tr>
+                <tr id="qDiscRow" style="display:none;"><td style="color:#d9534f;">Discount</td><td id="qDisc" style="color:#d9534f;"></td></tr>
+                <tr><td>VAT (5%)</td><td id="qTax"></td></tr>
+                <tr id="qDelRow" style="display:none;"><td style="color:#17a2b8;">Delivery</td><td id="qDel" style="color:#17a2b8;"></td></tr>
+                <tr class="total-row"><td>Total</td><td id="qTotal"></td></tr>
+            </table>
+        </div>
+    </div>
+    <div class="q-note">هذا العرض ساري المفعول لمدة 15 يوماً من تاريخ الإصدار | Prepared By: Accounting Department</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- ✅ مكتبات التصدير (تم نقلها للمكان الصحيح) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script>
+let allBooks = [];
+let cart = JSON.parse(localStorage.getItem('pos_cart')) || [];
+let currentInvoiceType = 'cash';
+
+// إعدادات الشركة الآمنة
+const settings = {
+    name: '{{ settings.company_name or "نظام المكتبة" }}',
+    address: '{{ settings.address or "" }}',
+    phone: '{{ settings.phone or "" }}',
+    logo: '{{ url_for("static", filename=settings.logo_path) if settings and settings.logo_path else "" }}',
+    currency: '{{ settings.currency or "ج.م" }}',
+    bank: {
+        title: '{{ settings.bank_name or "" }}',
+        acc: '{{ settings.bank_account or "" }}',
+        iban: '{{ settings.iban or "" }}',
+        name: '{{ settings.bank_name or "Dubai Islamic Bank" }}'
+    }
+};
+
+function loadBooks() {
+    fetch('/api/book_search?q=')
+        .then(res => res.json())
+        .then(data => {
+            allBooks = data.books || [];
+            document.getElementById('booksCount').textContent = `${data.total_count || 0} كتاب`;
+            renderBooks(allBooks);
+        })
+        .catch(err => console.error('❌ خطأ تحميل الكتب:', err));
+}
+
+function renderBooks(books) {
+    const grid = document.getElementById('booksGrid');
+    const noMsg = document.getElementById('noBooksMsg');
+    if (!books || books.length === 0) { 
+        grid.innerHTML = ''; 
+        noMsg.style.display = 'block'; 
+        return; 
+    }
+    noMsg.style.display = 'none';
+    grid.innerHTML = books.map(book => `
+        <div class="col-6 col-md-4 col-lg-3">
+            <div class="card h-100 shadow-sm hover-shadow book-card" style="cursor:pointer; transition:all 0.2s;" onclick="addToCart(${book.id}, '${book.title.replace(/'/g, "\\'")}', ${book.final_price}, ${book.stock})" onmouseover="this.classList.add('border-primary')" onmouseout="this.classList.remove('border-primary')">
+                <div class="card-body p-2"><h6 class="card-title text-truncate mb-1" title="${book.title}">${book.title}</h6><div class="d-flex justify-content-between align-items-center"><small class="text-muted">متوفر: ${book.stock}</small><span class="badge bg-primary">${book.final_price.toFixed(2)}</span></div></div>
+            </div>
+        </div>`).join('');
+}
+
+const searchInput = document.getElementById('searchBarcodeInput');
+const searchIcon = document.getElementById('searchIcon');
+let searchTimeout;
+
+searchInput.addEventListener('input', function() {
+    clearTimeout(searchTimeout);
+    const query = this.value.trim().toLowerCase();
+    searchIcon.className = 'fas fa-filter text-primary';
+    searchTimeout = setTimeout(() => {
+        if (query.length === 0) { renderBooks(allBooks); document.getElementById('booksCount').textContent = `${allBooks.length} كتاب`; searchIcon.className = 'fas fa-search text-muted'; return; }
+        const filtered = allBooks.filter(b => b.title.toLowerCase().includes(query) || (b.isbn && b.isbn.toLowerCase().includes(query)));
+        document.getElementById('booksCount').textContent = `${filtered.length} نتيجة`;
+        renderBooks(filtered);
+    }, 150);
+});
+
+searchInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); handleSearchOrBarcode(); }
+});
+
+function handleSearchOrBarcode() {
+    const value = searchInput.value.trim();
+    if (!value) { searchInput.focus(); return; }
+    fetch('/api/add_barcode_item', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ barcode: value }) })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            addToCart(data.item.book_id, data.item.title, data.item.price, data.item.stock);
+            searchInput.value = ''; renderBooks(allBooks); document.getElementById('booksCount').textContent = `${allBooks.length} كتاب`;
+            searchIcon.className = 'fas fa-check-circle text-success'; setTimeout(() => searchIcon.className = 'fas fa-search text-muted', 1000);
+        } else { alert('❌ ' + data.error); searchInput.select(); }
+    }).catch(err => { alert('❌ خطأ في الاتصال'); }).finally(() => searchInput.focus());
+}
+
+window.updateInvoiceType = function() { currentInvoiceType = document.getElementById('invoiceType').value; };
+document.getElementById('customerSelect').addEventListener('change', function() {
+    const info = document.getElementById('customerInfo');
+    if(info) info.style.display = this.value ? 'block' : 'none';
+});
+
+window.addToCart = function(id, title, price, stock) {
+    const existing = cart.find(i => i.id === id);
+    if (existing) { if (existing.qty < stock) existing.qty++; else { alert('⚠️ الكمية غير متوفرة!'); return; } } else { cart.push({ id, title, price, qty: 1, stock }); }
+    saveCart(); renderCart();
+};
+function saveCart() { localStorage.setItem('pos_cart', JSON.stringify(cart)); }
+function renderCart() {
+    const empty = document.getElementById('emptyCart');
+    const items = document.getElementById('cartItems');
+    if (cart.length === 0) { empty.style.display = 'block'; items.style.display = 'none'; return; }
+    empty.style.display = 'none'; items.style.display = 'block';
+    items.innerHTML = cart.map((item, i) => `
+        <div class="d-flex justify-content-between align-items-center mb-1 p-2 bg-white rounded shadow-sm cart-item">
+            <div class="flex-grow-1"><small class="fw-bold d-block text-truncate" style="max-width:120px;">${item.title}</small><small class="text-muted">${item.price.toFixed(2)} × ${item.qty}</small></div>
+            <div class="d-flex align-items-center gap-2"><input type="number" class="form-control form-control-sm" value="${item.qty}" min="1" max="${item.stock}" onchange="updateQty(${i}, this.value)" style="width:55px;"><button class="btn btn-sm btn-danger" onclick="removeItem(${i})">×</button></div>
+        </div>`).join('');
+    calcTotal();
+}
+window.updateQty = function(i, v) { const q = parseInt(v)||1; if(q>cart[i].stock){alert('غير متوفر');renderCart();return;} cart[i].qty=q<1?1:q; saveCart(); renderCart(); };
+window.removeItem = function(i) { cart.splice(i,1); saveCart(); renderCart(); };
+window.clearCart = function() { if(confirm('تفريغ السلة؟')){cart=[];saveCart();renderCart();} };
+
+function calcTotal() {
+    const sub = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const discPct = parseFloat(document.getElementById('discountPct').value) || 0;
+    const cashDisc = parseFloat(document.getElementById('cashDiscount').value) || 0;
+    const delivery = parseFloat(document.getElementById('deliveryFee').value) || 0;
+
+    const discAmount = sub * (discPct / 100);
+    const taxable = Math.max(0, sub - discAmount - cashDisc);
+    const tax = taxable * 0.05;
+    const grand = taxable + tax + delivery;
+
+    document.getElementById('subTotal').textContent = sub.toFixed(2);
+    document.getElementById('totalDiscount').textContent = (discAmount + cashDisc).toFixed(2);
+    document.getElementById('tax').textContent = tax.toFixed(2);
+    document.getElementById('delivery').textContent = delivery.toFixed(2);
+    document.getElementById('grandTotal').textContent = grand.toFixed(2);
+}
+
+window.toggleExportButtons = function() {
+    document.getElementById('exportButtons').classList.toggle('d-none', document.getElementById('saveInvoiceCheck').checked);
+};
+
+window.generateQuotationPDF = function() {
+    if (cart.length === 0) { alert('السلة فارغة!'); return; }
+    calcTotal();
+    
+    const qRef = 'QUO-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000);
+    const qDate = new Date().toLocaleDateString('ar-EG');
+    const client = document.getElementById('customerSelect').options[document.getElementById('customerSelect').selectedIndex].text;
+    const sub = parseFloat(document.getElementById('subTotal').textContent);
+    const discPct = parseFloat(document.getElementById('discountPct').value) || 0;
+    const cashDisc = parseFloat(document.getElementById('cashDiscount').value) || 0;
+    const delivery = parseFloat(document.getElementById('deliveryFee').value) || 0;
+    const tax = parseFloat(document.getElementById('tax').textContent);
+    const grand = parseFloat(document.getElementById('grandTotal').textContent);
+
+    document.getElementById('qRef').textContent = qRef;
+    document.getElementById('qDate').textContent = qDate;
+    document.getElementById('qClient').textContent = client;
+    document.getElementById('qCompany').textContent = settings.name;
+    document.getElementById('qAddress').textContent = settings.address;
+    document.getElementById('qPhone').textContent = settings.phone;
+    document.getElementById('qLogo').innerHTML = settings.logo ? `<img src="${settings.logo}" style="max-height:45px;">` : '';
+    
+    document.getElementById('qBankTitle').textContent = settings.bank.title;
+    document.getElementById('qBankAcc').textContent = settings.bank.acc;
+    document.getElementById('qBankIban').textContent = settings.bank.iban;
+    document.getElementById('qBankName').textContent = settings.bank.name;
+
+    let itemsHTML = '';
+    cart.forEach((item, i) => {
+        const itemDisc = item.price * item.qty * (discPct / 100);
+        const net = item.price * item.qty - itemDisc;
+        const taxAmt = net * 0.05;
+        const rowTotal = net + taxAmt;
+        itemsHTML += `<tr>
+            <td>${i+1}</td>
+            <td class="desc-cell"><span class="item-title">${item.title}</span><span class="item-isbn">ISBN: ${item.isbn || 'N/A'}</span></td>
+            <td>${item.qty}</td>
+            <td>${item.price.toFixed(2)}</td>
+            <td style="color:#d9534f;">${itemDisc.toFixed(2)}</td>
+            <td>${net.toFixed(2)}</td>
+            <td>VAT 5%</td>
+            <td>${taxAmt.toFixed(2)}</td>
+            <td style="font-weight:bold;">${rowTotal.toFixed(2)}</td>
+        </tr>`;
+    });
+    document.getElementById('qItems').innerHTML = itemsHTML;
+    
+    document.getElementById('qSub').textContent = sub.toFixed(2) + ' ' + settings.currency;
+    const discRow = document.getElementById('qDiscRow');
+    if(discPct > 0 || cashDisc > 0) {
+        discRow.style.display = 'table-row';
+        document.getElementById('qDisc').textContent = '-' + ((sub * discPct/100) + cashDisc).toFixed(2);
+    } else { discRow.style.display = 'none'; }
+    document.getElementById('qTax').textContent = tax + ' ' + settings.currency;
+    const delRow = document.getElementById('qDelRow');
+    if(delivery > 0) { delRow.style.display = 'table-row'; document.getElementById('qDel').textContent = '+' + delivery.toFixed(2); } else { delRow.style.display = 'none'; }
+    document.getElementById('qTotal').textContent = grand + ' ' + settings.currency;
+
+    const element = document.getElementById('quotationTemplate');
+    element.style.display = 'block';
+    
+    const opt = {
+        margin: [8, 8, 8, 8],
+        filename: `عرض_أسعار_${qRef}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+    
+    html2pdf().set(opt).from(element).save().then(() => { element.style.display = 'none'; })
+    .catch(err => { console.error(err); element.style.display = 'none'; alert('خطأ في إنشاء PDF'); });
+};
+
+window.generateQuotationExcel = function() {
+    if (cart.length === 0) { alert('السلة فارغة!'); return; }
+    calcTotal();
+    
+    const qRef = 'QUO-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000);
+    const sub = parseFloat(document.getElementById('subTotal').textContent);
+    const discPct = parseFloat(document.getElementById('discountPct').value) || 0;
+    const cashDisc = parseFloat(document.getElementById('cashDiscount').value) || 0;
+    const delivery = parseFloat(document.getElementById('deliveryFee').value) || 0;
+    const tax = parseFloat(document.getElementById('tax').textContent);
+    const grand = parseFloat(document.getElementById('grandTotal').textContent);
+    const client = document.getElementById('customerSelect').options[document.getElementById('customerSelect').selectedIndex].text;
+
+    let data = [
+        ['عرض أسعار'],
+        ['رقم العرض:', qRef, '', 'التاريخ:', new Date().toLocaleDateString('ar-EG')],
+        ['العميل:', client],
+        ['الشركة:', settings.name],
+        [],
+        ['#', 'ITEM DESCRIPTION', 'QTY', 'UNIT PRICE', 'DISCOUNT', 'AMOUNT', 'TAX', 'TAX AMT', 'TOTAL']
+    ];
+
+    cart.forEach((item, i) => {
+        const itemDisc = item.price * item.qty * (discPct / 100);
+        const net = item.price * item.qty - itemDisc;
+        const taxAmt = net * 0.05;
+        data.push([i+1, item.title + (item.isbn ? '\nISBN: ' + item.isbn : ''), item.qty, item.price, itemDisc.toFixed(2), net.toFixed(2), 'VAT 5%', taxAmt.toFixed(2), (net+taxAmt).toFixed(2)]);
+    });
+
+    data.push([]);
+    data.push(['', '', '', '', '', 'Sub-total', '', '', sub.toFixed(2)]);
+    if(discPct > 0 || cashDisc > 0) data.push(['', '', '', '', '', 'Discount', '', '', '-' + ((sub * discPct/100) + cashDisc).toFixed(2)]);
+    data.push(['', '', '', '', '', 'VAT (5%)', '', '', tax.toFixed(2)]);
+    if(delivery > 0) data.push(['', '', '', '', '', 'Delivery', '', '', '+' + delivery.toFixed(2)]);
+    data.push(['', '', '', '', '', 'Total', '', '', grand.toFixed(2)]);
+    data.push(['', '', '', '', '', '', '', '', settings.currency]);
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{wch:5}, {wch:45}, {wch:8}, {wch:12}, {wch:12}, {wch:12}, {wch:10}, {wch:12}, {wch:12}];
+    ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:8}}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "عرض أسعار");
+    XLSX.writeFile(wb, `عرض_أسعار_${qRef}.xlsx`);
+};
+
+window.checkout = function() {
+    if(cart.length===0){alert('السلة فارغة!');return;}
+    calcTotal();
+    const sub=parseFloat(document.getElementById('subTotal').textContent);
+    const discPct=parseFloat(document.getElementById('discountPct').value)||0;
+    const cashDisc=parseFloat(document.getElementById('cashDiscount').value)||0;
+    const delivery=parseFloat(document.getElementById('deliveryFee').value)||0;
+    const tax=parseFloat(document.getElementById('tax').textContent);
+    const grand=parseFloat(document.getElementById('grandTotal').textContent);
+    const cid=document.getElementById('customerSelect').value;
+    const saveDb=document.getElementById('saveInvoiceCheck').checked;
+
+    if(currentInvoiceType==='credit'&&!cid){alert('⚠️ يجب اختيار عميل للفاتورة الآجلة!');return;}
+
+    fetch('/api/create_invoice',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+            items:cart.map(i=>({book_id:i.id,quantity:i.qty,unit_price:i.price,discount:0,total:i.price*i.qty})),
+            subtotal:sub, discount_pct:discPct, cash_discount:cashDisc, delivery_fee:delivery,
+            tax:tax, total:grand, customer_id:cid||null, payment_method:currentInvoiceType, save_to_db:saveDb
+        })
+    })
+    .then(r=>r.json()).then(d=>{
+        if(d.success){
+            alert(d.print_only ? `🖨️ تم إنشاء الفاتورة للطباعة فقط\nرقم مرجعي: ${d.invoice_number}` : `✅ تم حفظ الفاتورة بنجاح!\nالرقم: ${d.invoice_number}`);
+            cart=[]; saveCart(); renderCart();
+        } else { alert('❌ '+d.error); }
+    }).catch(err=>alert('❌ خطأ في الاتصال'));
+};
+
+// تشغيل عند التحميل
+document.addEventListener('DOMContentLoaded', function() {
+    loadBooks();
+    renderCart();
+    toggleExportButtons();
+});
+</script>
+{% endblock %}

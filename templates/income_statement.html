@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}قائمة الدخل{% endblock %}
+{% block page_title %}📈 قائمة الدخل والأرباح (Profit & Loss){% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">من تاريخ</label>
+                <input type="date" name="start_date" value="{{ start_date }}" class="form-control">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">إلى تاريخ</label>
+                <input type="date" name="end_date" value="{{ end_date }}" class="form-control">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i> عرض التقرير</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card h-100 border-success">
+            <div class="card-body text-center">
+                <h6 class="text-muted mb-2">إجمالي الإيرادات</h6>
+                <h3 class="fw-bold text-success mb-0">{{ "%.2f"|format(total_revenue) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-warning">
+            <div class="card-body text-center">
+                <h6 class="text-muted mb-2">تكلفة البضاعة المباعة</h6>
+                <h3 class="fw-bold text-warning mb-0">{{ "%.2f"|format(total_cogs) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-info">
+            <div class="card-body text-center">
+                <h6 class="text-muted mb-2">إجمالي المصروفات</h6>
+                <h3 class="fw-bold text-info mb-0">{{ "%.2f"|format(total_expenses) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 {% if net_profit >= 0 %}border-primary{% else %}border-danger{% endif %}">
+            <div class="card-body text-center">
+                <h6 class="text-muted mb-2">صافي الربح / الخسارة</h6>
+                <h3 class="fw-bold {% if net_profit >= 0 %}text-primary{% else %}text-danger{% endif %} mb-0">{{ "%.2f"|format(net_profit) }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-light fw-bold">📊 تفاصيل قائمة الدخل</div>
+    <div class="card-body p-0">
+        <table class="table table-striped mb-0">
+            <thead class="table-dark">
+                <tr><th style="width:50%">البند</th><th class="text-end">المبلغ</th></tr>
+            </thead>
+            <tbody>
+                <tr><td class="fw-bold">(+ ) إيرادات المبيعات</td><td class="text-end fw-bold">{{ "%.2f"|format(total_revenue) }}</td></tr>
+                <tr><td class="text-muted ps-4">(- ) تكلفة البضاعة المباعة (COGS)</td><td class="text-end text-muted">{{ "%.2f"|format(total_cogs) }}</td></tr>
+                <tr class="table-info"><td class="fw-bold">= مجمل الربح (Gross Profit)</td><td class="text-end fw-bold">{{ "%.2f"|format(gross_profit) }}</td></tr>
+                <tr><td class="fw-bold pt-3">(- ) المصروفات التشغيلية:</td><td></td></tr>
+                {% for acc_name, amt in exp_details.items() %}
+                <tr><td class="ps-5 text-muted">• {{ acc_name }}</td><td class="text-end text-danger">{{ "%.2f"|format(amt) }}</td></tr>
+                {% else %}
+                <tr><td class="ps-5 text-muted">لا توجد مصروفات مسجلة في هذه الفترة</td><td class="text-end">0.00</td></tr>
+                {% endfor %}
+                <tr class="table-light"><td class="fw-bold">= صافي الربح قبل الضريبة</td><td class="text-end fw-bold fs-5 {% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">{{ "%.2f"|format(net_profit) }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

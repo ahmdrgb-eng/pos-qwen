@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}تحويل المخزون{% endblock %}
+{% block page_title %}🚚 تحويل المخزون بين الفروع{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- نموذج التحويل -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">📋 تفاصيل التحويل</h5>
+                </div>
+                <div class="card-body">
+                    <form id="transferForm" action="{{ url_for('create_transfer') }}" method="POST">
+                        <div class="mb-3">
+                            <label class="form-label">الفرع المصدر</label>
+                            <select name="from_branch" id="from_branch" class="form-select" required onchange="loadBranchBooks()">
+                                <option value="">-- اختر الفرع المرسل --</option>
+                                {% for b in branches %}
+                                <option value="{{ b.id }}">{{ b.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">الفرع المستقبل</label>
+                            <select name="to_branch" id="to_branch" class="form-select" required>
+                                <option value="">-- اختر الفرع المستقبل --</option>
+                                {% for b in branches %}
+                                <option value="{{ b.id }}">{{ b.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">ملاحظات</label>
+                            <textarea name="notes" class="form-control" rows="2"></textarea>
+                        </div>
+                        <!-- ✅ الحقل المخفي المهم جداً -->
+                        <input type="hidden" name="books_data" id="books_data" value="">
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-paper-plane"></i> إرسال الطلب
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- قائمة الكتب -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">📚 الكتب المضافة للتحويل</h5>
+                </div>
+                <div class="card-body">
+                    <!-- البحث -->
+                    <div class="mb-3">
+                        <input type="text" id="bookSearch" class="form-control" placeholder="🔍 ابحث عن كتاب..." disabled>
+                        <div id="searchResults" class="list-group mt-2 d-none" style="max-height: 200px; overflow-y: auto;"></div>
+                    </div>
+
+                    <!-- جدول الكتب المضافة -->
+                    <table class="table table-bordered">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>#</th>
+                                <th>الكتاب</th>
+                                <th>المتوفر</th>
+                                <th>الكمية</th>
+                                <th>إجراء</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cartTable">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">
+                                    لم تتم إضافة كتب بعد
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let cart = []; // قائمة الكتب المضافة
+let availableBooks = []; // الكتب المتاحة في الفرع
+
+// تحميل كتب الفرع المصدر
+function loadBranchBooks() {
+    const branchId = document.getElementById('from_branch').value;
+    const searchInput = document.getElementById('bookSearch');
+    
+    if (!branchId) {
+        searchInput.disabled = true;
+        return;
+    }
+    
+    searchInput.disabled = false;
+    searchInput.placeholder = "جاري التحميل...";
+    
+    fetch(`/api/branch-books/${branchId}`)
+        .then(response => response.json())
+        .then(data => {
+            availableBooks = data;
+            searchInput.placeholder = `🔍 ابحث عن كتاب (متوفر: ${data.length})`;
+        })
+        .catch(err => {
+            console.error(err);
+            searchInput.placeholder = "خطأ في التحميل";
+        });
+}
+
+// البحث الفوري
+document.getElementById('bookSearch').addEventListener('input', function() {
+    const query = this.value.trim().toLowerCase();
+    const resultsDiv = document.getElementById('searchResults');
+    
+    if (query.length < 2) {
+        resultsDiv.classList.add('d-none');
+        return;
+    }
+    
+    const matches = availableBooks.filter(book => 
+        book.title.toLowerCase().includes(query) || 
+        (book.isbn && book.isbn.toLowerCase().includes(query))
+    );
+    
+    if (matches.length === 0) {
+        resultsDiv.innerHTML = '<div class="list-group-item text-muted">لا توجد نتائج</div>';
+    } else {
+        resultsDiv.innerHTML = matches.map(book => `
+            <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+                    onclick="addToCart(${book.id}, '${book.title.replace(/'/g, "\\'")}', ${book.stock})">
+                <span>${book.title}</span>
+                <span class="badge bg-success">متوفر: ${book.stock}</span>
+            </button>
+        `).join('');
+    }
+    resultsDiv.classList.remove('d-none');
+});
+
+// إضافة كتاب للسلة
+function addToCart(bookId, title, stock) {
+    // التحقق من عدم التكرار
+    if (cart.find(item => item.book_id === bookId)) {
+        alert('هذا الكتاب مضاف بالفعل!');
+        return;
+    }
+    
+    cart.push({
+        book_id: bookId,
+        title: title,
+        qty: 1,
+        stock: stock
+    });
+    
+    renderCart();
+    document.getElementById('bookSearch').value = '';
+    document.getElementById('searchResults').classList.add('d-none');
+}
+
+// عرض السلة
+function renderCart() {
+    const tbody = document.getElementById('cartTable');
+    const booksDataInput = document.getElementById('books_data');
+    
+    if (cart.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center text-muted">
+                    لم تتم إضافة كتب بعد
+                </td>
+            </tr>
+        `;
+        booksDataInput.value = '';
+        return;
+    }
+    
+    let html = '';
+    cart.forEach((item, index) => {
+        html += `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${item.title}</td>
+                <td><span class="badge bg-info">${item.stock}</span></td>
+                <td>
+                    <input type="number" class="form-control form-control-sm" 
+                           value="${item.qty}" min="1" max="${item.stock}"
+                           onchange="updateQty(${index}, this.value)"
+                           style="width: 80px;">
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-danger" 
+                            onclick="removeFromCart(${index})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    tbody.innerHTML = html;
+    
+    // ✅ تحديث الحقل المخفي بالبيانات الصحيحة
+    booksDataInput.value = JSON.stringify(cart);
+    console.log('Books data:', booksDataInput.value); // للتأكد
+}
+
+// تحديث الكمية
+function updateQty(index, qty) {
+    const val = parseInt(qty) || 1;
+    const max = cart[index].stock;
+    
+    if (val > max) {
+        alert(`الكمية القصوى: ${max}`);
+        cart[index].qty = max;
+    } else if (val < 1) {
+        cart[index].qty = 1;
+    } else {
+        cart[index].qty = val;
+    }
+    
+    renderCart();
+}
+
+// حذف من السلة
+function removeFromCart(index) {
+    cart.splice(index, 1);
+    renderCart();
+}
+
+// إخفاء النتائج عند النقر خارجها
+document.addEventListener('click', function(e) {
+    if (!e.target.matches('#bookSearch')) {
+        document.getElementById('searchResults').classList.add('d-none');
+    }
+});
+</script>
+{% endblock %}

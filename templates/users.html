@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}إدارة المستخدمين{% endblock %}
+{% block page_title %}إدارة المستخدمين{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-user-shield text-primary"></i> قائمة المستخدمين</h5>
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addUserModal">
+            <i class="fas fa-plus"></i> إضافة مستخدم
+        </button>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th>اسم المستخدم</th>
+                        <th>الاسم الكامل</th>
+                        <th>الدور</th>
+                        <th>الفرع</th>
+                        <th>الحالة</th>
+                        <th>إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user.id }}</td>
+                        <td><code>{{ user.username }}</code></td>
+                        <td>{{ user.full_name }}</td>
+                        <td>
+                            {% if user.role == 'admin' %}<span class="badge bg-danger">مدير عام</span>
+                            {% elif user.role == 'manager' %}<span class="badge bg-warning text-dark">مدير فرع</span>
+                            {% else %}<span class="badge bg-info text-dark">كاشير</span>{% endif %}
+                        </td>
+                        <td>{{ user.branch.name if user.branch else '-' }}</td>
+                        <td>
+                            {% if user.is_active %}<span class="badge bg-success">نشط</span>
+                            {% else %}<span class="badge bg-secondary">معطل</span>{% endif %}
+                        </td>
+                        <td>
+                            <div class="d-flex gap-2">
+                                <a href="{{ url_for('edit_user', id=user.id) }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-edit"></i> تعديل
+                                </a>
+                                {% if user.id != current_user.id %}
+                                <form method="POST" action="{{ url_for('toggle_user', id=user.id) }}" class="d-inline">
+                                    <button type="submit" class="btn btn-sm {% if user.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %}">
+                                        {{ 'تعطيل' if user.is_active else 'تفعيل' }}
+                                    </button>
+                                </form>
+                                {% else %}
+                                <span class="text-muted small">(أنت)</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- نافذة إضافة مستخدم -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_user') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-user-plus"></i> إضافة مستخدم جديد</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">اسم المستخدم *</label><input type="text" name="username" class="form-control" required placeholder="مثال: cashier_ahmed"></div>
+                    <div class="mb-3"><label class="form-label">كلمة المرور *</label><input type="password" name="password" class="form-control" required minlength="4"></div>
+                    <div class="mb-3"><label class="form-label">الاسم الكامل *</label><input type="text" name="full_name" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label">الدور *</label>
+                        <select name="role" class="form-select" required>
+                            <option value="cashier">كاشير</option>
+                            <option value="manager">مدير فرع</option>
+                            <option value="admin">مدير عام</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">الفرع</label>
+                        <select name="branch_id" class="form-select">
+                            <option value="">بدون فرع (للمدير العام)</option>
+                            {% for branch in branches %}<option value="{{ branch.id }}">{{ branch.name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6"><label class="form-label">البريد</label><input type="email" name="email" class="form-control"></div>
+                        <div class="col-6"><label class="form-label">الهاتف</label><input type="text" name="phone" class="form-control"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ المستخدم</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- نافذة تعديل مستخدم -->
+{% if editing_user %}
+<div class="modal fade show d-block" id="editUserModal" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('edit_user', id=editing_user.id) }}">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-user-edit text-warning"></i> تعديل بيانات المستخدم</h5>
+                    <button type="button" class="btn-close" onclick="window.location.href='{{ url_for('users') }}'"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">اسم المستخدم *</label><input type="text" name="username" class="form-control" value="{{ editing_user.username }}" required></div>
+                    <div class="mb-3"><label class="form-label">كلمة المرور الجديدة (اتركها فارغة للإبقاء على الحالية)</label><input type="password" name="new_password" class="form-control" minlength="4" placeholder="كلمة مرور جديدة"></div>
+                    <div class="mb-3"><label class="form-label">الاسم الكامل *</label><input type="text" name="full_name" class="form-control" value="{{ editing_user.full_name }}" required></div>
+                    <div class="mb-3"><label class="form-label">الدور *</label>
+                        <select name="role" class="form-select" required>
+                            <option value="cashier" {% if editing_user.role=='cashier' %}selected{% endif %}>كاشير</option>
+                            <option value="manager" {% if editing_user.role=='manager' %}selected{% endif %}>مدير فرع</option>
+                            <option value="admin" {% if editing_user.role=='admin' %}selected{% endif %}>مدير عام</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">الفرع</label>
+                        <select name="branch_id" class="form-select">
+                            <option value="">بدون فرع</option>
+                            {% for branch in branches %}
+                            <option value="{{ branch.id }}" {% if editing_user.branch_id == branch.id %}selected{% endif %}>{{ branch.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6"><label class="form-label">البريد</label><input type="email" name="email" class="form-control" value="{{ editing_user.email or '' }}"></div>
+                        <div class="col-6"><label class="form-label">الهاتف</label><input type="text" name="phone" class="form-control" value="{{ editing_user.phone or '' }}"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="window.location.href='{{ url_for('users') }}'">إلغاء</button>
+                    <button type="submit" class="btn btn-warning">تحديث البيانات</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

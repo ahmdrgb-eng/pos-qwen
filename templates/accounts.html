@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}شجرة الحسابات{% endblock %}
+{% block page_title %}🌳 شجرة الحسابات{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+        <h5 class="mb-0 fw-bold text-primary"><i class="fas fa-sitemap me-2"></i>إدارة شجرة الحسابات</h5>
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addAccountModal">
+            <i class="fas fa-plus"></i> إضافة حساب رئيسي
+        </button>
+    </div>
+    <div class="card-body">
+        <div id="accountsTree" class="tree-container"></div>
+        <div id="emptyState" class="text-center py-5 text-muted" style="display:none;">
+            <i class="fas fa-folder-open fa-3x mb-3 opacity-25"></i>
+            <p class="mb-0">لا توجد حسابات مسجلة. أضف حساباً رئيسياً للبدء.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Modal إضافة حساب -->
+<div class="modal fade" id="addAccountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_account') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">إضافة حساب جديد</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">كود الحساب</label>
+                        <input type="text" name="code" class="form-control" required placeholder="مثال: 1001">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">اسم الحساب</label>
+                        <input type="text" name="name" class="form-control" required placeholder="مثال: الصندوق الرئيسي">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">نوع الحساب</label>
+                        <select name="account_type" class="form-select">
+                            <option value="asset">أصول</option>
+                            <option value="liability">خصوم</option>
+                            <option value="equity">حقوق ملكية</option>
+                            <option value="revenue">إيرادات</option>
+                            <option value="expense">مصروفات</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الحساب الأب (اختياري)</label>
+                        <select name="parent_id" class="form-select">
+                            <option value="">-- بدون أب (حساب رئيسي) --</option>
+                            {% for acc in accounts_data %}
+                            <option value="{{ acc.id }}">{{ acc.code }} - {{ acc.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ الحساب</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const accounts = {{ accounts_data | tojson }};
+    const treeContainer = document.getElementById('accountsTree');
+    const emptyState = document.getElementById('emptyState');
+
+    if (accounts.length === 0) {
+        emptyState.style.display = 'block';
+        return;
+    }
+
+    emptyState.style.display = 'none';
+
+    // بناء الهيكل الهرمي
+    const map = {};
+    const roots = [];
+    accounts.forEach(acc => {
+        map[acc.id] = { ...acc, children: [] };
+    });
+    accounts.forEach(acc => {
+        if (acc.parent_id && map[acc.parent_id]) {
+            map[acc.parent_id].children.push(map[acc.id]);
+        } else {
+            roots.push(map[acc.id]);
+        }
+    });
+
+    // دالة رسم العقدة بشكل تكراري
+    function renderNode(node, level = 0) {
+        const indent = level * 24;
+        const typeLabels = {
+            'asset': 'أصول', 'liability': 'خصوم', 'equity': 'حقوق ملكية',
+            'revenue': 'إيرادات', 'expense': 'مصروفات'
+        };
+        const typeBadge = typeLabels[node.account_type] ? 
+            `<span class="badge bg-info bg-opacity-10 text-info ms-2">${typeLabels[node.account_type]}</span>` : '';
+
+        let html = `
+            <div class="tree-node mb-2" style="padding-left: ${indent}px;">
+                <div class="d-flex align-items-center justify-content-between p-2 bg-white border rounded shadow-sm hover-shadow">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-folder${node.children.length ? '' : '-open'} text-warning me-2"></i>
+                        <span class="fw-bold text-primary me-2">${node.code}</span>
+                        <span class="fw-semibold me-2">${node.name}</span>
+                        ${typeBadge}
+                    </div>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-success" title="إضافة فرع" onclick="setParentAndOpen(${node.id})">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                        <button class="btn btn-outline-primary" title="تعديل" onclick="alert('ميزة التعديل قيد التطوير')">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-outline-danger" title="حذف" onclick="deleteAccount(${node.id})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="children-container">
+                    ${node.children.map(child => renderNode(child, level + 1)).join('')}
+                </div>
+            </div>
+        `;
+        return html;
+    }
+
+    treeContainer.innerHTML = roots.map(root => renderNode(root)).join('');
+
+    // دالة مساعدة لفتح المودال وتعيين الأب تلقائياً
+    window.setParentAndOpen = function(parentId) {
+        const modal = new bootstrap.Modal(document.getElementById('addAccountModal'));
+        document.querySelector('#addAccountModal select[name="parent_id"]').value = parentId;
+        modal.show();
+    };
+
+    window.deleteAccount = function(id) {
+        if (confirm('⚠️ هل أنت متأكد من حذف هذا الحساب؟\nسيتم حذفه نهائياً ولا يمكن التراجع.')) {
+            // يمكنك ربط هذا بـ fetch أو form لاحقاً
+            alert('سيتم إضافة رابط الحذف في التحديث القادم');
+        }
+    };
+});
+</script>
+{% endblock %}

@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Tax Invoice - {{ invoice.invoice_number }}{% endblock %}
+
+{% block content %}
+<style>
+    .tax-invoice-container {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #000;
+        background: #fff;
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0 auto;
+        padding: 15mm;
+        box-sizing: border-box;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        direction: ltr;
+        text-align: left;
+        position: relative;
+    }
+
+    /* Header Layout */
+    .inv-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px; border-bottom: 2px solid #000; padding-bottom: 15px; }
+    .inv-meta h1 { margin: 0 0 8px; font-size: 28px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+    .inv-meta p { margin: 4px 0; font-size: 13px; }
+    .inv-company { text-align: right; max-width: 300px; }
+    .inv-company img { max-height: 55px; margin-bottom: 6px; display: block; margin-left: auto; }
+    .inv-company h2 { margin: 0 0 4px; font-size: 18px; font-weight: 700; }
+    .inv-company p { margin: 0; padding: 0; font-size: 13px; line-height: 1.4; color: #333; }
+
+    /* Bill To Section */
+    .bill-to-section { margin: 20px 0 30px 0; border-left: 4px solid #000; padding-left: 15px; background: #f9f9f9; padding: 10px 15px; }
+    .bill-to-section h3 { margin: 0 0 5px; font-size: 16px; font-weight: bold; text-transform: uppercase; }
+    .bill-to-section .client-name { font-size: 16px; font-weight: bold; color: #333; }
+
+    /* Table */
+    .inv-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 13px; }
+    .inv-table th { border-bottom: 2px solid #000; padding: 10px 5px; text-align: left; font-weight: bold; text-transform: uppercase; font-size: 12px; }
+    .inv-table td { padding: 10px 5px; border-bottom: 1px solid #eee; vertical-align: top; }
+    
+    .col-num { width: 40px; text-align: center; }
+    .col-qty { width: 60px; text-align: center; }
+    .col-price { width: 100px; text-align: right; }
+    .col-disc { width: 80px; text-align: center; }
+    .col-total { width: 100px; text-align: right; font-weight: bold; }
+    
+    .item-name-cell { text-align: left; direction: rtl; font-weight: 600; }
+    .item-isbn { display: block; font-size: 10px; color: #666; direction: ltr; margin-top: 2px; }
+
+    /* Totals Block - Aligned to Right */
+    .totals-wrapper { display: flex; justify-content: flex-end; margin-bottom: 30px; }
+    .totals-table { width: 280px; border-collapse: collapse; font-size: 13px; }
+    .totals-table td { padding: 8px 10px; border: 1px solid #000; }
+    .totals-table .label { background: #f5f5f5; font-weight: bold; width: 140px; }
+    .totals-table .value { text-align: right; font-weight: bold; }
+    .totals-table .grand-total { background: #e9ecef; font-size: 14px; }
+    .totals-table .delivery-fee { color: #17a2b8; }
+    .totals-table .discount-row { color: #dc3545; }
+
+    /* Amount in Words */
+    .amount-words { margin-bottom: 30px; font-size: 12px; font-style: italic; color: #444; }
+
+    /* Footer / Bank Details */
+    .inv-footer { margin-top: 40px; font-size: 12px; border-top: 2px solid #000; padding-top: 15px; }
+    .bank-details p { margin: 3px 0; }
+    .prepared-by { text-align: right; font-weight: bold; font-size: 11px; margin-top: 20px; }
+
+    /* Stamp for Overdue/Returned */
+    .stamp-overdue {
+        position: absolute; top: 40%; left: 35%;
+        font-size: 80px; font-weight: bold; color: rgba(255, 0, 0, 0.15);
+        transform: rotate(-30deg); pointer-events: none; display: none;
+    }
+    .is-overdue .stamp-overdue { display: block; }
+
+    /* Print Controls */
+    .no-print { text-align: center; margin-bottom: 20px; }
+    @media print {
+        body { margin: 0; padding: 0; background: #fff; }
+        .no-print { display: none; }
+        .tax-invoice-container { box-shadow: none; margin: 0; width: 100%; padding: 10mm; }
+    }
+</style>
+
+<div class="no-print">
+    <button class="btn btn-primary" onclick="window.print()"><i class="fas fa-print"></i> طباعة / PDF</button>
+    <a href="{{ url_for('invoices') }}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> عودة</a>
+</div>
+
+<div class="tax-invoice-container {% if invoice.status == 'returned' %}is-overdue{% endif %}">
+    <!-- Watermark -->
+    <div class="stamp-overdue">OVERDUE / RETURNED</div>
+
+    <!-- Header -->
+    <div class="inv-header">
+        <div class="inv-meta">
+            <h1>Tax Invoice</h1>
+            <p><strong>Invoice date:</strong> {{ invoice.created_at.strftime('%d/%m/%Y') }}</p>
+            <p><strong>Due date:</strong> {{ invoice.created_at.strftime('%d/%m/%Y') }}</p>
+            <p><strong>Invoice number:</strong> {{ invoice.invoice_number }}</p>
+        </div>
+        <div class="inv-company">
+            {% if settings and settings.logo_path %}
+            <img src="{{ url_for('static', filename=settings.logo_path) }}" alt="Logo">
+            {% endif %}
+            <h2>Qindeel LLC</h2>
+            <p>Emarat Atrium Building P.O.BOX 71474</p>
+            <p>DUBAI U.A.E</p>
+            <p>{{ settings.phone if settings and settings.phone else '+971 4 43385885' }}</p>
+            <p>TRN: {{ settings.tax_registration_number if settings and settings.tax_registration_number else '100267899100003' }}</p>
+        </div>
+    </div>
+
+    <!-- Bill To -->
+    <div class="bill-to-section">
+        <h3>Bill To:</h3>
+        {% if customer %}
+            <div class="client-name">{{ customer.name }}</div>
+            {% if customer.phone %}<p>Tel: {{ customer.phone }}</p>{% endif %}
+            {% if customer.email %}<p>Email: {{ customer.email }}</p>{% endif %}
+        {% else %}
+            <div class="client-name">Walk-in Customer</div>
+        {% endif %}
+    </div>
+
+    <!-- Items Table -->
+    <table class="inv-table">
+        <thead>
+            <tr>
+                <th class="col-num">#</th>
+                <th>Item Description</th>
+                <th class="col-qty">Qty</th>
+                <th class="col-price">Unit Price</th>
+                <th class="col-price">Price</th>
+                <th class="col-disc">Discount</th>
+                <th class="col-total">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for inv_item, book in items_data %}
+            {% set line_price = inv_item.unit_price * inv_item.quantity %}
+            {% set line_total = line_price * (1 - (invoice.discount / 100)) %}
+            <tr>
+                <td class="col-num">{{ loop.index }}</td>
+                <td class="item-name-cell">
+                    {{ book.title if book else 'Item' }}
+                    {% if book and book.isbn %}
+                    <span class="item-isbn">ISBN: {{ book.isbn }}</span>
+                    {% endif %}
+                </td>
+                <td class="col-qty">{{ inv_item.quantity }}</td>
+                <td class="col-price">{{ "%.2f"|format(inv_item.unit_price) }}</td>
+                <td class="col-price">{{ "%.2f"|format(line_price) }}</td>
+                <td class="col-disc">{{ invoice.discount }}%</td>
+                <td class="col-total">{{ "%.2f"|format(line_total) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Totals -->
+    <div class="totals-wrapper">
+        <table class="totals-table">
+            <tr>
+                <td class="label">Sub-total</td>
+                <td class="value">{{ "%.2f"|format(invoice.subtotal) }}</td>
+            </tr>
+            
+            {% if invoice.discount > 0 %}
+            <tr class="discount-row">
+                <td class="label">Discount ({{ invoice.discount }}%)</td>
+                <td class="value">- {{ "%.2f"|format(invoice.subtotal * invoice.discount / 100) }}</td>
+            </tr>
+            {% endif %}
+
+            {% if delivery_fee and delivery_fee > 0 %}
+            <tr class="delivery-fee">
+                <td class="label">Delivery Fee</td>
+                <td class="value">+ {{ "%.2f"|format(delivery_fee) }}</td>
+            </tr>
+            {% endif %}
+
+            <tr>
+                <td class="label">VAT 5%</td>
+                <td class="value">{{ "%.2f"|format(invoice.tax) }}</td>
+            </tr>
+
+            <tr class="grand-total">
+                <td class="label">Total</td>
+                <td class="value">{{ "%.2f"|format(invoice.total) }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Amount in Words -->
+    <div class="amount-words">
+        <strong>Total amount in words:</strong> 
+        {{ "%.2f"|format(invoice.total) }} (Please implement number-to-words logic if required)
+    </div>
+
+    <!-- Footer -->
+    <div class="inv-footer">
+        <div class="bank-details">
+            <p><strong>Bank Details</strong></p>
+            <p>Account Title: {{ settings.bank_name or 'QINDEEL LLC' }}</p>
+            <p>Account Number: {{ settings.bank_account or '001520069891101' }}</p>
+            <p>IBAN: {{ settings.iban or 'AE310240001520069891101' }}</p>
+            <p>Bank Name: {{ settings.bank_name or 'Dubai Islamic Bank' }}</p>
+            <p>SWIFT Code: {{ settings.swift or 'DUIBAEADXXX' }}</p>
+        </div>
+        <div class="prepared-by">Prepared By: Accounting Department</div>
+    </div>
+</div>
+{% endblock %}

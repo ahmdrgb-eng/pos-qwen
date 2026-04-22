@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}مقارنة الفروع{% endblock %}
+{% block page_title %}📊 مقارنة أداء الفروع{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+    {% for data in branches %}
+    <div class="col-md-3">
+        <div class="card h-100 border-start border-4 border-primary">
+            <div class="card-body text-center">
+                <h5 class="card-title">{{ data.branch.name }}</h5>
+                <p class="text-muted small">{{ data.branch.country }} ({{ data.currency }})</p>
+                <hr>
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h4 class="text-success mb-0">{{ "%.0f"|format(data.sales) }}</h4>
+                        <small>المبيعات</small>
+                    </div>
+                    <div class="col-6">
+                        <h4 class="text-primary mb-0">{{ data.invoice_count }}</h4>
+                        <small>الفواتير</small>
+                    </div>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between small">
+                    <span>المخزون:</span>
+                    <strong>{{ data.total_stock }}</strong>
+                </div>
+                <div class="d-flex justify-content-between small {% if data.low_stock > 0 %}text-danger{% endif %}">
+                    <span>منخفض المخزون:</span>
+                    <strong>{{ data.low_stock }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="card">
+    <div class="card-header"><h6 class="mb-0">📈 جدول مقارنة تفصيلي</h6></div>
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>الفرع</th>
+                    <th>الدولة</th>
+                    <th>العملة</th>
+                    <th>إجمالي المبيعات (30 يوم)</th>
+                    <th>عدد المعاملات</th>
+                    <th>المخزون الكلي</th>
+                    <th>تنبيهات المخزون</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for data in branches %}
+                <tr>
+                    <td>{{ data.branch.name }}</td>
+                    <td>{{ data.branch.country }}</td>
+                    <td><span class="badge bg-light text-dark">{{ data.currency }}</span></td>
+                    <td>{{ "%.2f"|format(data.sales) }} {{ data.currency }}</td>
+                    <td>{{ data.invoice_count }}</td>
+                    <td>{{ data.total_stock }}</td>
+                    <td>
+                        {% if data.low_stock > 0 %}
+                        <span class="badge bg-danger">{{ data.low_stock }} أصناف</span>
+                        {% else %}
+                        <span class="badge bg-success">ممتاز</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}الميزانية العمومية{% endblock %}
+{% block page_title %}⚖️ الميزانية العمومية (Balance Sheet){% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- الأصول -->
+    <div class="col-md-6">
+        <div class="card h-100 border-success">
+            <div class="card-header bg-success text-white fw-bold">📦 الأصول</div>
+            <div class="card-body p-0">
+                <table class="table table-striped mb-0">
+                    {% for name, val in assets.items() %}
+                    <tr><td>{{ name }}</td><td class="text-end fw-bold">{{ "%.2f"|format(val) }}</td></tr>
+                    {% endfor %}
+                    <tr class="table-success"><td class="fw-bold">إجمالي الأصول</td><td class="text-end fw-bold fs-5">{{ "%.2f"|format(total_assets) }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- الخصوم وحقوق الملكية -->
+    <div class="col-md-6">
+        <div class="card h-100 border-primary">
+            <div class="card-header bg-primary text-white fw-bold">📊 الخصوم وحقوق الملكية</div>
+            <div class="card-body p-0">
+                <table class="table table-striped mb-0">
+                    {% for name, val in liabilities.items() %}
+                    <tr><td>{{ name }}</td><td class="text-end text-danger">{{ "%.2f"|format(val) }}</td></tr>
+                    {% endfor %}
+                    {% for name, val in equity.items() %}
+                    <tr><td>{{ name }}</td><td class="text-end fw-bold">{{ "%.2f"|format(val) }}</td></tr>
+                    {% endfor %}
+                    <tr class="table-primary"><td class="fw-bold">إجمالي الخصوم + حقوق الملكية</td><td class="text-end fw-bold fs-5">{{ "%.2f"|format(total_liab_equity) }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert {% if is_balanced %}alert-success{% else %}alert-warning{% endif %} mt-4 text-center">
+    {% if is_balanced %}
+    ✅ <strong>الميزانية متوازنة:</strong> الأصول = الخصوم + حقوق الملكية
+    {% else %}
+    ⚠️ <strong>تنبيه:</strong> يوجد فرق بسيط بسبب حسابات تقريبية (النقدية/الموردين). أضف وحدة "الخزينة والموردين" للموازنة الدقيقة 100%.
+    {% endif %}
+</div>
+{% endblock %}

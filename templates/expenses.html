@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}المصروفات{% endblock %}
+{% block page_title %}💰 إدارة المصروفات التشغيلية{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-md-4"><div class="card bg-danger text-white p-3"><h3>{{ "%.2f"|format(total) }}</h3><small>إجمالي المصروفات (الفترة)</small></div></div>
+    {% for b, amt in by_branch.items() %}
+    <div class="col-md-4"><div class="card bg-light p-3"><h4>{{ "%.2f"|format(amt) }}</h4><small>فرع: {{ b }}</small></div></div>
+    {% endfor %}
+</div>
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">تصفية الفترة</h6>
+        <form method="GET" class="d-flex gap-2">
+            <input type="date" name="start" value="{{ start }}" class="form-control form-control-sm">
+            <input type="date" name="end" value="{{ end }}" class="form-control form-control-sm">
+            <button type="submit" class="btn btn-sm btn-primary">عرض</button>
+        </form>
+    </div>
+</div>
+
+<div class="d-flex justify-content-between mb-2">
+    <h5>سجل المصروفات</h5>
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addExpModal"><i class="fas fa-plus"></i> تسجيل مصروف</button>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead class="table-light"><tr><th>التاريخ</th><th>الفرع</th><th>الحساب</th><th>المبلغ</th><th>الوصف</th><th>بواسطة</th><th>إجراء</th></tr></thead>
+        <tbody>
+            {% for e in expenses %}
+            <tr>
+                <td>{{ e.expense_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ e.branch.name }}</td>
+                <td>{{ e.account_obj.code }} - {{ e.account_obj.name }}</td>
+                <td class="fw-bold text-danger">{{ "%.2f"|format(e.amount) }}</td>
+                <td>{{ e.description or '-' }}</td>
+                <td><small>{{ e.creator.full_name }}</small></td>
+                <td>
+                    <form method="POST" action="{{ url_for('delete_expense', id=e.id) }}" onsubmit="return confirm('حذف هذا المصروف؟')" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                    </form>
+                </td>
+            </tr>{% else %}
+            <tr><td colspan="7" class="text-center text-muted">لا توجد مصروفات في هذه الفترة</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- مودال إضافة مصروف -->
+<div class="modal fade" id="addExpModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('add_expense') }}" class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">تسجيل مصروف جديد</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="mb-2"><label>تاريخ المصروف *</label><input type="date" name="expense_date" class="form-control" value="{{ datetime.now().strftime('%Y-%m-%d') }}" required></div>
+                <div class="mb-2"><label>الفرع *</label>
+                    <select name="branch_id" class="form-select" required>{% for b in branches %}<option value="{{ b.id }}" {% if b.id == (session.get('branch_id') or current_user.branch_id) %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select>
+                </div>
+                <div class="mb-2"><label>حساب المصروف *</label>
+                    <select name="account_id" class="form-select" required>{% for a in accounts %}<option value="{{ a.id }}">{{ a.code }} - {{ a.name }}</option>{% endfor %}</select>
+                </div>
+                <div class="mb-2"><label>المبلغ *</label><input type="number" step="0.01" name="amount" class="form-control" required></div>
+                <div class="mb-2"><label>الوصف / ملاحظات</label><textarea name="description" class="form-control" rows="2"></textarea></div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button><button type="submit" class="btn btn-success">تسجيل</button></div>
+        </form>
+    </div>
+</div>
+{% endblock %}

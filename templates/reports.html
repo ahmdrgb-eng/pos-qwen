@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}التقارير المالية{% endblock %}
+{% block page_title %}📊 التقارير المالية{% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-filter"></i> فلاتر التقرير</h5>
+        <!-- ✅ تم تصحيح الرابط هنا ليكون export_report_excel -->
+        <a href="{{ url_for('export_report_excel', start_date=start_date, end_date=end_date, branch_id=selected_branch) }}" 
+           class="btn btn-light btn-sm text-primary fw-bold">
+            <i class="fas fa-file-excel"></i> تصدير إلى Excel
+        </a>
+    </div>
+    <div class="card-body">
+        <form method="GET" class="row g-3 align-items-end">
+            {% if current_user.role == 'admin' %}
+            <div class="col-md-3">
+                <label class="form-label">اختر الفرع</label>
+                <select name="branch_id" class="form-select">
+                    <option value="">كل الفروع</option>
+                    {% for b in branches %}
+                    <option value="{{ b.id }}" {% if selected_branch == b.id %}selected{% endif %}>{{ b.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-md-3">
+                <label class="form-label">من تاريخ</label>
+                <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">إلى تاريخ</label>
+                <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-sync"></i> تحديث التقرير</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- بطاقات الملخص -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card position-relative">
+            <i class="fas fa-coins icon text-warning"></i>
+            <h3>{{ "%.2f"|format(total_sales) }}</h3>
+            <p>إجمالي المبيعات {{ currency }}</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card position-relative">
+            <i class="fas fa-percent icon text-danger"></i>
+            <h3>{{ "%.2f"|format(total_discount) }}</h3>
+            <p>إجمالي الخصومات {{ currency }}</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card position-relative">
+            <i class="fas fa-file-invoice-dollar icon text-success"></i>
+            <h3>{{ "%.2f"|format(total_tax) }}</h3>
+            <p>إجمالي الضريبة {{ currency }}</p>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card position-relative">
+            <i class="fas fa-shopping-cart icon text-primary"></i>
+            <h3>{{ invoice_count }}</h3>
+            <p>عدد الفواتير</p>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- الرسم البياني للمبيعات اليومية -->
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0">📈 المبيعات اليومية</h6></div>
+            <div class="card-body">
+                <canvas id="dailyChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- طرق الدفع -->
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0">💳 طرق الدفع</h6></div>
+            <div class="card-body">
+                <canvas id="paymentChart" height="250"></canvas>
+                <div class="mt-3">
+                    {% for method, amount in payment_stats.items() %}
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>{{ {'cash':'💵 نقدي','card':'💳 بطاقة','transfer':'🏦 تحويل'}.get(method, method) }}</span>
+                        <strong>{{ "%.2f"|format(amount) }} {{ currency }}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- أكثر الكتب مبيعاً -->
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">📚 أكثر 10 كتب مبيعاً</h6>
+                <span class="badge bg-info">{{ top_books|length }} كتاب</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>اسم الكتاب</th>
+                                <th class="text-center">الكمية المباعة</th>
+                                <th class="text-end">إجمالي الإيراد</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for book in top_books %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td><strong>{{ book.title }}</strong></td>
+                                <td class="text-center"><span class="badge bg-primary">{{ book.qty }}</span></td>
+                                <td class="text-end fw-bold text-success">{{ "%.2f"|format(book.revenue) }} {{ currency }}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="4" class="text-center text-muted py-4">لا توجد بيانات في الفترة المحددة</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// ✅ تم إصلاح صيغة Chart.js بإضافة مفتاح 'data'
+const dailyCtx = document.getElementById('dailyChart').getContext('2d');
+new Chart(dailyCtx, {
+    type: 'line',
+    data: { // ✅ إضافة هذا السطر ضروري
+        labels: [{% for d in daily_chart %}'{{ d.date }}',{% endfor %}],
+        datasets: [{
+            label: 'المبيعات ({{ currency }})',
+            data: [{% for d in daily_chart %}{{ d.value }},{% endfor %}],
+            borderColor: '#3498db',
+            backgroundColor: 'rgba(52,152,219,0.1)',
+            fill: true,
+            tension: 0.3
+        }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } } }
+});
+
+const payCtx = document.getElementById('paymentChart').getContext('2d');
+new Chart(payCtx, {
+    type: 'doughnut',
+    data: { // ✅ إضافة هذا السطر ضروري
+        labels: [{% for m in payment_stats %}'{{ {'cash':'نقدي','card':'بطاقة','transfer':'تحويل'}.get(m, m) }}',{% endfor %}],
+        datasets: [{
+            data: [{% for a in payment_stats.values() %}{{ a }},{% endfor %}],
+            backgroundColor: ['#27ae60','#3498db','#f39c12']
+        }]
+    },
+    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+});
+</script>
+{% endblock %}

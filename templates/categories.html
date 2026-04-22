@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}الفئات{% endblock %}
+{% block page_title %}إدارة الفئات{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-layer-group text-primary"></i> الفئات</h5>
+        {% if current_user.role in ['admin', 'manager'] %}
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addCategoryModal">
+            <i class="fas fa-plus"></i> إضافة فئة
+        </button>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            {% for cat in categories %}
+            <div class="col-md-3">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h5><i class="fas fa-folder text-warning"></i></h5>
+                        <h6>{{ cat.name }}</h6>
+                        <p class="text-muted small">{{ cat.description or '' }}</p>
+                        <span class="badge bg-info">{{ cat.books|length }} كتاب</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addCategoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_category') }}">
+                <div class="modal-header"><h5 class="modal-title">إضافة فئة</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">اسم الفئة</label><input type="text" name="name" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label">الوصف</label><textarea name="description" class="form-control" rows="2"></textarea></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success">حفظ</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

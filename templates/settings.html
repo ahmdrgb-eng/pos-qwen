@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}الإعدادات{% endblock %}
+{% block page_title %}إعدادات النظام{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card">
+            <div class="card-header bg-dark text-white"><h5 class="mb-0"><i class="fas fa-cogs"></i> إعدادات النظام والشركة</h5></div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <h6 class="text-primary border-bottom pb-2 mb-3"><i class="fas fa-building"></i> معلومات الشركة</h6>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6"><label class="form-label">اسم الشركة</label><input type="text" name="company_name" class="form-control" value="{{ settings.company_name }}" required></div>
+                        <div class="col-md-3"><label class="form-label">العملة</label><input type="text" name="currency" class="form-control" value="{{ settings.currency }}"></div>
+                        <div class="col-md-3"><label class="form-label">نسبة الضريبة (%)</label><input type="number" name="tax_rate" class="form-control" value="{{ settings.tax_rate }}" step="0.1"></div>
+                        <div class="col-md-6"><label class="form-label">العنوان</label><input type="text" name="address" class="form-control" value="{{ settings.address }}"></div>
+                        <div class="col-md-3"><label class="form-label">الهاتف</label><input type="text" name="phone" class="form-control" value="{{ settings.phone }}"></div>
+                        <div class="col-md-3"><label class="form-label">البريد</label><input type="email" name="email" class="form-control" value="{{ settings.email }}"></div>
+                        <div class="col-md-12"><label class="form-label">رقم السجل الضريبي (TRN)</label><input type="text" name="tax_registration_number" class="form-control" value="{{ settings.tax_registration_number }}"></div>
+                    </div>
+
+                    <h6 class="text-primary border-bottom pb-2 mb-3"><i class="fas fa-university"></i> البيانات البنكية</h6>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6"><label class="form-label">اسم البنك</label><input type="text" name="bank_name" class="form-control" value="{{ settings.bank_name }}"></div>
+                        <div class="col-md-6"><label class="form-label">رقم الحساب</label><input type="text" name="bank_account" class="form-control" value="{{ settings.bank_account }}"></div>
+                        <div class="col-md-6"><label class="form-label">IBAN</label><input type="text" name="iban" class="form-control" value="{{ settings.iban }}"></div>
+                        <div class="col-md-6"><label class="form-label">SWIFT Code</label><input type="text" name="swift" class="form-control" value="{{ settings.swift }}"></div>
+                    </div>
+
+                    <h6 class="text-primary border-bottom pb-2 mb-3"><i class="fas fa-image"></i> الشعار</h6>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4 text-center">
+                            {% if settings.logo_path %}<img src="{{ url_for('static', filename=settings.logo_path) }}" style="max-height: 120px; border: 1px solid #ddd; padding: 5px;">{% else %}<div style="height: 100px; background: #eee; display: flex; align-items: center; justify-content: center;">لا يوجد شعار</div>{% endif %}
+                        </div>
+                        <div class="col-md-8"><label class="form-label">تغيير اللوجو</label><input type="file" name="logo" class="form-control" accept="image/*"><small class="text-muted">PNG, JPG</small></div>
+                    </div>
+
+                    <div class="text-end mt-4"><button type="submit" class="btn btn-primary btn-lg px-5"><i class="fas fa-save"></i> حفظ الإعدادات</button></div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

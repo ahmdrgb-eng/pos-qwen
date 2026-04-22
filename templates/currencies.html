@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}إدارة العملات{% endblock %}
+{% block page_title %}🌍 إدارة عملات الفروع وأسعار الصرف{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header bg-info text-white"><h6 class="mb-0">تحديث عملات وأسعار صرف الفروع</h6></div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered align-middle">
+                <thead>
+                    <tr>
+                        <th>اسم الفرع</th>
+                        <th>الدولة</th>
+                        <th>العملة الحالية</th>
+                        <th>سعر الصرف (مقابل الأساسي)</th>
+                        <th>إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for branch in branches %}
+                    <tr>
+                        <td><strong>{{ branch.name }}</strong></td>
+                        <td>{{ branch.country }}</td>
+                        <td><span class="badge bg-primary">{{ branch.currency }}</span></td>
+                        <td>{{ branch.exchange_rate }}</td>
+                        <td>
+                            <form method="POST" action="{{ url_for('update_branch_currency', id=branch.id) }}" class="d-flex gap-2">
+                                <input type="text" name="currency" class="form-control form-control-sm" value="{{ branch.currency }}" style="width:80px" required>
+                                <input type="number" step="0.01" name="exchange_rate" class="form-control form-control-sm" value="{{ branch.exchange_rate }}" style="width:100px" required>
+                                <button type="submit" class="btn btn-sm btn-success">تحديث</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

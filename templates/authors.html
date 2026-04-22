@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}إدارة المؤلفين{% endblock %}
+{% block page_title %}✍️ إدارة المؤلفين{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="fas fa-user-edit text-primary"></i> قائمة المؤلفين</h5>
+        <div class="d-flex gap-2">
+            <!-- 🔍 شريط البحث -->
+            <div class="input-group" style="min-width: 250px;">
+                <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                <input type="text" id="authorSearch" class="form-control" placeholder="بحث بالاسم أو الجنسية..." onkeyup="searchAuthors()">
+                <button class="btn btn-outline-secondary" type="button" onclick="clearSearch()">مسح</button>
+            </div>
+            {% if current_user.role in ['admin', 'manager'] %}
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addAuthorModal">
+                <i class="fas fa-plus"></i> إضافة مؤلف
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body">
+        <!-- عداد النتائج -->
+        <div class="mb-3 text-muted small" id="resultsCount">
+            جاري تحميل المؤلفين...
+        </div>
+        
+        {% if authors %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle" id="authorsTable">
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>اسم المؤلف</th>
+                        <th>الجنسية</th>
+                        <th>عدد الكتب</th>
+                        <th>إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="authorsBody">
+                    {% for item in authors %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td><strong>{{ item.author.name }}</strong></td>
+                        <td><span class="badge bg-secondary">{{ item.author.nationality or '-' }}</span></td>
+                        <td><span class="badge bg-info text-dark">{{ item.book_count }} كتاب</span></td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary edit-btn"
+                                    data-id="{{ item.author.id }}"
+                                    data-name="{{ item.author.name }}"
+                                    data-nationality="{{ item.author.nationality or '' }}"
+                                    title="تعديل">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <form method="POST" action="{{ url_for('delete_author', id=item.author.id) }}" 
+                                      class="d-inline" onsubmit="return confirm('هل أنت متأكد من حذف هذا المؤلف؟');">
+                                    <button type="submit" class="btn btn-outline-danger" title="حذف">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="fas fa-user-edit fa-3x mb-3"></i>
+            <p>لا توجد مؤلفين مسجلين حالياً</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- مودال إضافة مؤلف -->
+<div class="modal fade" id="addAuthorModal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content">
+        <form method="POST" action="{{ url_for('add_author') }}">
+            <div class="modal-header"><h5 class="modal-title">إضافة مؤلف جديد</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">اسم المؤلف *</label>
+                    <input type="text" name="name" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">الجنسية</label>
+                    <input type="text" name="nationality" class="form-control" placeholder="مثال: مصري، سعودي، إلخ">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="submit" class="btn btn-success">حفظ</button>
+            </div>
+        </form>
+    </div></div>
+</div>
+
+<!-- مودال تعديل مؤلف -->
+<div class="modal fade" id="editAuthorModal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content">
+        <form method="POST" id="editForm">
+            <div class="modal-header"><h5 class="modal-title">تعديل بيانات المؤلف</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">اسم المؤلف *</label>
+                    <input type="text" name="name" id="editName" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">الجنسية</label>
+                    <input type="text" name="nationality" id="editNationality" class="form-control">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="submit" class="btn btn-warning">تحديث</button>
+            </div>
+        </form>
+    </div></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 🔍 دالة البحث الفوري
+function searchAuthors() {
+    const query = document.getElementById('authorSearch').value.trim();
+    const countEl = document.getElementById('resultsCount');
+    
+    fetch(`/api/authors/search?q=${encodeURIComponent(query)}`)
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('authorsBody');
+            tbody.innerHTML = '';
+            
+            if (data.authors.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">لا توجد نتائج لـ "${query}"</td></tr>`;
+                countEl.textContent = '0 نتيجة';
+                return;
+            }
+            
+            data.authors.forEach((author, index) => {
+                const row = `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td><strong>${author.name}</strong></td>
+                        <td><span class="badge bg-secondary">${author.nationality}</span></td>
+                        <td><span class="badge bg-info text-dark">${author.book_count} كتاب</span></td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary edit-btn"
+                                    data-id="${author.id}"
+                                    data-name="${author.name}"
+                                    data-nationality="${author.nationality}"
+                                    title="تعديل">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+            
+            countEl.textContent = `${data.total} نتيجة`;
+            
+            // إعادة تفعيل أزرار التعديل
+            attachEditListeners();
+        })
+        .catch(err => {
+            console.error('Search error:', err);
+            countEl.textContent = 'حدث خطأ أثناء البحث';
+        });
+}
+
+// مسح البحث
+function clearSearch() {
+    document.getElementById('authorSearch').value = '';
+    searchAuthors();
+}
+
+// تفعيل أزرار التعديل ديناميكياً
+function attachEditListeners() {
+    document.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const d = this.dataset;
+            document.getElementById('editForm').action = `/authors/${d.id}/edit`;
+            document.getElementById('editName').value = d.name;
+            document.getElementById('editNationality').value = d.nationality || '';
+            new bootstrap.Modal(document.getElementById('editAuthorModal')).show();
+        });
+    });
+}
+
+// تفعيل الأزرار عند تحميل الصفحة
+document.addEventListener('DOMContentLoaded', function() {
+    attachEditListeners();
+});
+
+// دعم ضغط Enter للبحث
+document.getElementById('authorSearch').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        searchAuthors();
+    }
+});
+</script>
+{% endblock %}

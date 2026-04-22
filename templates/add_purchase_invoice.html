@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% block title %}إضافة فاتورة شراء{% endblock %}
+{% block page_title %}📥 إضافة فاتورة شراء جديدة{% endblock %}
+
+{% block content %}
+<form method="POST" action="{{ url_for('add_purchase_invoice') }}" id="purchaseForm">
+    <!-- 1. بيانات الفاتورة الأساسية -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white fw-bold">📋 بيانات الفاتورة</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">المورد (الناشر) *</label>
+                    <select name="supplier_id" class="form-select" required>
+                        <option value="">اختر المورد...</option>
+                        {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">الفرع *</label>
+                    <select name="branch_id" class="form-select" required>
+                        {% for b in branches %}<option value="{{ b.id }}" {% if b.id == (session.get('branch_id') or current_user.branch_id) %}selected{% endif %}>{{ b.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">رقم الفاتورة *</label>
+                    <input type="text" name="invoice_number" class="form-control" required placeholder="مثال: INV-2024-001">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">تاريخ الفاتورة</label>
+                    <input type="date" name="invoice_date" class="form-control" value="{{ datetime.now().strftime('%Y-%m-%d') }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">المبلغ المدفوع مقدماً</label>
+                    <input type="number" step="0.01" name="paid_amount" class="form-control" value="0.00">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">تاريخ الاستحقاق</label>
+                    <input type="date" name="due_date" class="form-control">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">إجمالي التكلفة (محسوب)</label>
+                    <input type="number" step="0.01" name="total_amount" id="total_amount" class="form-control fw-bold text-dark" readonly>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">ملاحظات</label>
+                    <textarea name="notes" class="form-control" rows="2"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. جدول الأصناف وزر الاستيراد -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center bg-light">
+            <h6 class="mb-0 fw-bold">📦 أصناف الفاتورة</h6>
+            <div class="d-flex gap-2">
+                <!-- ✅ هذا هو زر الاستيراد -->
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('excelInput').click()">
+                    <i class="fas fa-file-excel"></i> استيراد من إكسل
+                </button>
+                <!-- زر مخفي لرفع الملف -->
+                <input type="file" id="excelInput" accept=".xlsx,.xls" style="display:none" onchange="handleExcelUpload(this)">
+                
+                <button type="button" class="btn btn-sm btn-success" onclick="addItemRow()">
+                    <i class="fas fa-plus"></i> إضافة يدوي
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0 table-responsive">
+            <table class="table table-bordered mb-0" id="itemsTable">
+                <thead class="table-light text-center">
+                    <tr>
+                        <th style="width:5%">#</th>
+                        <th style="width:30%">الكتاب</th>
+                        <th style="width:12%">سعر الغلاف</th>
+                        <th style="width:10%">خصم %</th>
+                        <th style="width:12%">التكلفة</th>
+                        <th style="width:8%">الكمية</th>
+                        <th style="width:12%">الإجمالي</th>
+                        <th style="width:5%">حذف</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <input type="hidden" name="items_data" id="items_data">
+    <button type="submit" class="btn btn-primary btn-lg w-100 mb-5 shadow-sm">
+        <i class="fas fa-save me-2"></i> حفظ وتسجيل الفاتورة
+    </button>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // بيانات الكتب الحالية (JSON)
+    let booksData = {{ books|tojson }};
+
+    // إضافة صف جديد يدوياً
+    function addItemRow() {
+        const tbody = document.querySelector('#itemsTable tbody');
+        const rowIdx = tbody.children.length + 1;
+        const tr = document.createElement('tr');
+        
+        // خيارات الكتب
+        let bookOptions = '<option value="">اختر الكتاب...</option>';
+        booksData.forEach(b => {
+            bookOptions += `<option value="${b.id}" data-base="${b.base_price || 0}">${b.title} (ISBN: ${b.isbn || '-'})</option>`;
+        });
+
+        tr.innerHTML = `
+            <td class="text-center align-middle">${rowIdx}</td>
+            <td><select class="form-select book-select" onchange="updateBase(this)">${bookOptions}</select></td>
+            <td><input type="number" step="0.01" class="form-control base-price" value="0" oninput="calcRow(this)"></td>
+            <td><input type="number" class="form-control discount-pct" value="50" oninput="calcRow(this)"></td>
+            <td><input type="text" class="form-control cost-price fw-bold text-danger" value="0.00" readonly></td>
+            <td><input type="number" class="form-control qty" value="1" min="1" oninput="calcRow(this)"></td>
+            <td><input type="text" class="form-control row-total fw-bold" value="0.00" readonly></td>
+            <td class="text-center align-middle"><button type="button" class="btn btn-sm btn-danger" onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    // تحديث سعر الغلاف عند اختيار الكتاب
+    function updateBase(sel) {
+        const tr = sel.closest('tr');
+        const baseInput = tr.querySelector('.base-price');
+        const selOpt = sel.options[sel.selectedIndex];
+        if(selOpt.dataset.base) {
+            baseInput.value = selOpt.dataset.base;
+            calcRow(sel);
+        }
+    }
+
+    // حساب القيم في الصف (التكلفة = الغلاف - الخصم)
+    function calcRow(el) {
+        const tr = el.closest('tr');
+        const base = parseFloat(tr.querySelector('.base-price').value) || 0;
+        const disc = parseFloat(tr.querySelector('.discount-pct').value) || 0;
+        const qty = parseFloat(tr.querySelector('.qty').value) || 0;
+        
+        // المعادلة: التكلفة = سعر الغلاف * (1 - نسبة الخصم / 100)
+        const cost = base * (1 - disc / 100);
+        
+        tr.querySelector('.cost-price').value = cost.toFixed(2);
+        tr.querySelector('.row-total').value = (cost * qty).toFixed(2);
+        calcGrandTotal();
+    }
+
+    // حذف صف
+    function removeRow(btn) {
+        btn.closest('tr').remove();
+        // إعادة ترقيم الصفوف
+        document.querySelectorAll('#itemsTable tbody tr').forEach((r, i) => {
+            r.cells[0].textContent = i + 1;
+        });
+        calcGrandTotal();
+    }
+
+    // حساب الإجمالي الكلي للفاتورة
+    function calcGrandTotal() {
+        let total = 0;
+        document.querySelectorAll('.row-total').forEach(i => total += parseFloat(i.value) || 0);
+        document.getElementById('total_amount').value = total.toFixed(2);
+    }
+
+    // 🔥 دالة استيراد الإكسل
+    function handleExcelUpload(input) {
+        const file = input.files[0]; 
+        if(!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const btn = input.previousElementSibling; // زر الاستيراد
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري المعالجة...';
+        btn.disabled = true;
+
+        fetch('/api/parse-purchase-excel', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.error) {
+                alert('❌ ' + data.error);
+            } else if(data.items.length > 0) {
+                // تفريغ الجدول الحالي
+                document.querySelector('#itemsTable tbody').innerHTML = '';
+                
+                // تعبئة البيانات المستوردة
+                data.items.forEach((item, idx) => {
+                    const tbody = document.querySelector('#itemsTable tbody');
+                    const tr = document.createElement('tr');
+                    
+                    // إعداد خيار الكتاب المختار
+                    let opts = `<option value="${item.book_id}" selected>${item.title}</option>`;
+                    
+                    // بناء HTML للصف
+                    tr.innerHTML = `
+                        <td class="text-center align-middle">${idx + 1}</td>
+                        <td><select class="form-select book-select" onchange="updateBase(this)">${opts}</select></td>
+                        <td><input type="number" step="0.01" class="form-control base-price" value="${item.base_price}" oninput="calcRow(this)"></td>
+                        <td><input type="number" class="form-control discount-pct" value="${item.discount_pct}" oninput="calcRow(this)"></td>
+                        <td><input type="text" class="form-control cost-price fw-bold text-danger" value="${item.cost_price.toFixed(2)}" readonly></td>
+                        <td><input type="number" class="form-control qty" value="${item.quantity}" min="1" oninput="calcRow(this)"></td>
+                        <td><input type="text" class="form-control row-total fw-bold" value="${(item.cost_price * item.quantity).toFixed(2)}" readonly></td>
+                        <td class="text-center align-middle"><button type="button" class="btn btn-sm btn-danger" onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+                
+                calcGrandTotal();
+                
+                // رسالة تنبيه بالكتب الجديدة
+                let msg = `✅ تم استيراد ${data.items.length} صنف بنجاح.`;
+                if(data.created_count > 0) msg += `\n🆕 تم إضافة ${data.created_count} كتاب جديد للنظام تلقائياً.`;
+                alert(msg);
+            } else {
+                alert('⚠️ الملف فارغ أو لا يحتوي على أصناف صالحة.');
+            }
+        })
+        .catch(err => alert('❌ خطأ في الاتصال بالسيرفر'))
+        .finally(() => {
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+            input.value = ''; // مسح الملف المختار
+        });
+    }
+
+    // تجهيز البيانات للإرسال للسيرفر عند الحفظ
+    document.getElementById('purchaseForm').addEventListener('submit', function(e) {
+        const items = [];
+        document.querySelectorAll('#itemsTable tbody tr').forEach(tr => {
+            const bid = tr.querySelector('.book-select').value;
+            const base = parseFloat(tr.querySelector('.base-price').value) || 0;
+            const disc = parseFloat(tr.querySelector('.discount-pct').value) || 0;
+            const qty = parseFloat(tr.querySelector('.qty').value) || 0;
+            
+            if(bid && qty > 0) {
+                items.push({
+                    book_id: parseInt(bid), 
+                    base_price: base, 
+                    discount_pct: disc,
+                    cost_price: base * (1 - disc/100), 
+                    selling_price: base, 
+                    quantity: qty
+                });
+            }
+        });
+        
+        if(!items.length) { 
+            e.preventDefault(); 
+            alert('❌ يرجى إضافة صنف واحد على الأقل!'); 
+            return; 
+        }
+        
+        document.getElementById('items_data').value = JSON.stringify(items);
+    });
+
+    // إضافة صف افتراضي عند فتح الصفحة
+    document.addEventListener('DOMContentLoaded', addItemRow);
+</script>
+{% endblock %}

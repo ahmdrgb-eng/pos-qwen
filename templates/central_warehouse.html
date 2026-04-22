@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}المخزن المركزي{% endblock %}
+{% block page_title %}🏢 المخزن المركزي: {{ warehouse.name }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-warehouse"></i> مخزون الفرع المركزي الموحد</h5>
+        <button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#addStockModal">
+            <i class="fas fa-plus-circle"></i> إضافة مخزون
+        </button>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info py-2 mb-3">
+            <small><i class="fas fa-info-circle"></i> يعرض هذا الجدول الكتب والمخزون الخاص بالفرع: <strong>{{ warehouse.name }}</strong></small>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>الكتاب</th>
+                        <th>ISBN</th>
+                        <th>الكمية المتوفرة</th>
+                        <th>الحد الأدنى</th>
+                        <th>الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for inv, book in inventory %}
+                    <tr>
+                        <td>{{ book.id }}</td>
+                        <td><strong>{{ book.title }}</strong></td>
+                        <td><code>{{ book.isbn or '-' }}</code></td>
+                        <td class="fw-bold">{{ inv.quantity }}</td>
+                        <td>{{ inv.min_quantity }}</td>
+                        <td>
+                            {% if inv.quantity <= inv.min_quantity %}
+                            <span class="badge bg-danger">منخفض</span>
+                            {% else %}
+                            <span class="badge bg-success">متوفر</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-center text-muted">لا توجد أصناف في المخزن المركزي</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- مودال إضافة مخزون -->
+<div class="modal fade" id="addStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_central_stock') }}">
+                <div class="modal-header"><h5 class="modal-title">إضافة مخزون للمركز</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">الكتاب</label>
+                        <select name="book_id" class="form-select" required>
+                            <option value="">اختر الكتاب...</option>
+                            {% for b in books %}<option value="{{ b.id }}">{{ b.title }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الكمية</label>
+                        <input type="number" name="quantity" class="form-control" min="1" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
