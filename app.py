@@ -1,4 +1,3 @@
-# D:\POS QWEN\app.py
 import os, json, time, traceback, io
 from datetime import datetime, timedelta
 from functools import wraps
@@ -8,6 +7,7 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from flask_mail import Mail, Message
 from database import db, User, Branch, Author, Publisher, Category, Book, BranchInventory, Customer, Invoice, InvoiceItem, StockMovement, AppSettings, PublisherTransaction, CustomerPayment, StockTransfer, TransferItem, Account, Expense, PurchaseInvoice, PurchaseInvoiceItem
 from werkzeug.utils import secure_filename
+from werkzeug.security import check_password_hash
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'bookstore_secure_key_2024'
@@ -16,41 +16,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-# ... (بعد تعريف app = Flask(__name__) وقواعد قاعدة البيانات) ...
-
-@app.route('/')
-def index():
-    # توجيه الزائر مباشرة لصفحة تسجيل الدخول إذا لم يكن مسجلاً
-    return redirect(url_for('login'))
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
-    
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        # مثال بسيط للتحقق (استبدله بنظام التحقق الخاص بك من قاعدة البيانات)
-        user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password, password):
-            login_user(user)
-            flash('✅ تم تسجيل الدخول بنجاح', 'success')
-            return redirect(url_for('dashboard'))
-        else:
-            flash('❌ اسم المستخدم أو كلمة المرور غير صحيحة', 'danger')
-            
-    return render_template('login.html')
-
-@app.route('/logout')
-@login_required
-def logout():
-    logout_user()
-    flash('تم تسجيل الخروج', 'info')
-    return redirect(url_for('login'))
-
-# ... (بقية الكود الخاص بك) ...
 # إعدادات البريد الإلكتروني
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
@@ -90,7 +55,7 @@ def inject_online_users():
         online = User.query.filter(User.last_seen >= threshold, User.is_active == True).order_by(User.last_seen.desc()).all()
     return dict(online_users=online)
 
-# ===================== Decorators للصلاحيات البسيطة =====================
+# ===================== Decorators للصلاحيات =====================
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -142,23 +107,37 @@ def init_db():
             db.session.commit()
 
 # ===================== المصادقة ولوحة التحكم =====================
+@app.route('/')
+def index():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if current_user.is_authenticated: return redirect(url_for('dashboard'))
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+    
     if request.method == 'POST':
-        u = User.query.filter_by(username=request.form['username']).first()
-        if u and u.check_password(request.form['password']) and u.is_active:
-            login_user(u)
-            session['branch_id'] = u.branch_id
-            flash(f'مرحباً {u.full_name}', 'success')
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password) and user.is_active:
+            login_user(user)
+            session['branch_id'] = user.branch_id
+            flash(f'مرحباً {user.full_name}', 'success')
             return redirect(url_for('dashboard'))
-        flash('بيانات الدخول غير صحيحة', 'danger')
+        else:
+            flash('❌ اسم المستخدم أو كلمة المرور غير صحيحة', 'danger')
+            
     return render_template('login.html')
 
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
+    flash('تم تسجيل الخروج', 'info')
     return redirect(url_for('login'))
 
 @app.route('/dashboard')
@@ -166,20 +145,17 @@ def logout():
 def dashboard():
     bid = session.get('branch_id') or current_user.branch_id
     
-    # حساب الإيرادات (نفس كودك الأصلي)
     rev = db.session.query(db.func.sum(Invoice.total)).filter(
         Invoice.branch_id==bid, 
         Invoice.status=='completed', 
         Invoice.created_at>=datetime.now()-timedelta(days=30)
     ).scalar() or 0
     
-    # جلب آخر 5 فواتير
     recent_invoices = Invoice.query.filter_by(
         branch_id=bid, 
         status='completed'
     ).order_by(Invoice.created_at.desc()).limit(5).all()
     
-    # ✅ جلب اسم العميل يدوياً لكل فاتورة لتجنب مشاكل العلاقات
     for inv in recent_invoices:
         inv.display_customer = Customer.query.get(inv.customer_id) if inv.customer_id else None
 
@@ -190,11 +166,14 @@ def dashboard():
                          total_customers=Customer.query.count(),
                          total_invoices=Invoice.query.filter_by(branch_id=bid, status='completed').count(), 
                          low_stock=[], daily_sales=[])
+
 # ===================== إدارة الفروع =====================
 @app.route('/branches')
 @login_required
 @manager_required
-def branches(): return render_template('branches.html', branches=Branch.query.all(), editing_branch=None)
+def branches(): 
+    return render_template('branches.html', branches=Branch.query.all(), editing_branch=None)
+
 @app.route('/branches/add', methods=['POST'])
 @login_required
 @admin_required
@@ -204,6 +183,7 @@ def add_branch():
     new_branch = Branch(name=request.form['name'], address=request.form.get('address',''), phone=request.form.get('phone',''), country=request.form.get('country','UAE'), currency=request.form.get('currency','د.إ'), exchange_rate=float(request.form.get('exchange_rate', 1.0)), is_central=is_central)
     db.session.add(new_branch); db.session.commit(); flash('تم إضافة الفرع', 'success')
     return redirect(url_for('branches'))
+
 @app.route('/branches/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -218,6 +198,7 @@ def edit_branch(id):
         branch.exchange_rate, branch.is_central = float(request.form.get('exchange_rate', 1.0)), is_central
         db.session.commit(); flash('تم تحديث الفرع', 'success'); return redirect(url_for('branches'))
     return render_template('branches.html', branches=Branch.query.all(), editing_branch=branch)
+
 @app.route('/branches/<int:id>/delete', methods=['POST'])
 @login_required
 @admin_required
@@ -233,6 +214,7 @@ def delete_branch(id):
 @login_required
 @admin_required
 def users(): return render_template('users.html', users=User.query.all(), branches=Branch.query.all())
+
 @app.route('/users/add', methods=['POST'])
 @login_required
 @admin_required
@@ -243,6 +225,7 @@ def add_user():
     br = request.form.get('branch_id','').strip(); br = int(br) if br else None
     db.session.add(User(username=un, password=User.hash_password(pw), full_name=request.form.get('full_name',''), email=request.form.get('email',''), phone=request.form.get('phone',''), role=request.form.get('role','cashier'), branch_id=br, is_active=True))
     db.session.commit(); flash('تم إضافة المستخدم', 'success'); return redirect(url_for('users'))
+
 @app.route('/users/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -259,6 +242,7 @@ def edit_user(id):
         if np: u.password = User.hash_password(np) if len(np)>=4 else u.password
         db.session.commit(); flash('تم تحديث المستخدم', 'success'); return redirect(url_for('users'))
     return render_template('users.html', users=User.query.all(), branches=Branch.query.all(), editing_user=u)
+
 @app.route('/users/<int:id>/toggle', methods=['POST'])
 @login_required
 @admin_required
@@ -273,6 +257,7 @@ def toggle_user(id):
 def authors():
     data = [{'author': a, 'book_count': Book.query.filter_by(author_id=a.id, is_active=True).count()} for a in Author.query.all()]
     return render_template('authors.html', authors=data, editing_author=None)
+
 @app.route('/authors/add', methods=['POST'])
 @login_required
 @manager_required
@@ -282,6 +267,7 @@ def add_author():
     if Author.query.filter_by(name=name).first(): flash('المؤلف موجود مسبقاً', 'danger'); return redirect(url_for('authors'))
     db.session.add(Author(name=name, nationality=request.form.get('nationality', ''))); db.session.commit(); flash('تم إضافة المؤلف', 'success')
     return redirect(url_for('authors'))
+
 @app.route('/authors/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 @manager_required
@@ -294,6 +280,7 @@ def edit_author(id):
         db.session.commit(); flash('تم التحديث', 'success'); return redirect(url_for('authors'))
     data = [{'author': a, 'book_count': Book.query.filter_by(author_id=a.id, is_active=True).count()} for a in Author.query.all()]
     return render_template('authors.html', authors=data, editing_author=author)
+
 @app.route('/authors/<int:id>/delete', methods=['POST'])
 @login_required
 @admin_required
@@ -303,43 +290,31 @@ def delete_author(id):
         if Book.query.filter_by(author_id=id, is_active=True).count() > 0: flash('⚠️ مرتبط بكتب نشطة', 'warning')
         else: db.session.delete(author); db.session.commit(); flash('تم الحذف', 'success')
     return redirect(url_for('authors'))
+
 @app.route('/authors/<int:id>/books')
 @login_required
 def author_books(id):
     author = db.session.get(Author, id)
     if not author: flash('غير موجود', 'danger'); return redirect(url_for('authors'))
     return render_template('author_books.html', author=author, books=Book.query.filter_by(author_id=id, is_active=True).all())
-    # ===================== API بحث المؤلفين =====================
+
 @app.route('/api/authors/search')
 @login_required
 def search_authors():
-    """بحث فوري في المؤلفين"""
     query = request.args.get('q', '').strip()
-    
     if not query:
-        # إرجاع جميع المؤلفين إذا لم يكن هناك بحث
         authors = Author.query.all()
     else:
-        # بحث مرن: بالاسم أو الجنسية
         search_term = f"%{query}%"
         authors = Author.query.filter(
-            db.or_(
-                Author.name.like(search_term),
-                Author.nationality.like(search_term)
-            )
+            db.or_(Author.name.like(search_term), Author.nationality.like(search_term))
         ).all()
-    
-    # تجهيز البيانات للرد
     result = []
     for author in authors:
         book_count = Book.query.filter_by(author_id=author.id, is_active=True).count()
         result.append({
-            'id': author.id,
-            'name': author.name,
-            'nationality': author.nationality or '-',
-            'book_count': book_count
+            'id': author.id, 'name': author.name, 'nationality': author.nationality or '-', 'book_count': book_count
         })
-    
     return jsonify({'authors': result, 'total': len(result)})
 
 # ===================== العملاء =====================
@@ -348,11 +323,13 @@ def search_authors():
 def customers():
     data = [{'customer': c, 'inv_count': Invoice.query.filter_by(customer_id=c.id, status='completed').count()} for c in Customer.query.all()]
     return render_template('customers.html', customers=data)
+
 @app.route('/customers/add', methods=['POST'])
 @login_required
 def add_customer(): 
     db.session.add(Customer(name=request.form['name'], phone=request.form.get('phone',''), email=request.form.get('email',''), address=request.form.get('address',''), national_id=request.form.get('national_id','')))
     db.session.commit(); flash('تم إضافة العميل', 'success'); return redirect(url_for('customers'))
+
 @app.route('/customers/<int:id>/statement')
 @login_required
 def customer_statement(id):
@@ -364,6 +341,7 @@ def customer_statement(id):
     ev += [{'date':p.created_at, 'ref':p.reference or '-', 'type':'دفعة', 'debit':0, 'credit':p.amount, 'notes':p.notes or ''} for p in pays]
     ev.sort(key=lambda x: x['date'])
     return render_template('customer_statement.html', customer=c, events=ev, current_date=datetime.now())
+
 @app.route('/customers/<int:id>/payment', methods=['POST'])
 @login_required
 def add_customer_payment(id):
@@ -374,6 +352,7 @@ def add_customer_payment(id):
         db.session.add(CustomerPayment(customer_id=id, amount=am, payment_method=request.form.get('method','cash'), reference=request.form.get('reference',''), notes=request.form.get('notes','')))
         db.session.commit(); flash('تم تسجيل الدفعة', 'success')
     return redirect(url_for('customer_statement', id=id))
+
 @app.route('/customers/<int:id>/invoices')
 @login_required
 def customer_invoices(id):
@@ -392,18 +371,21 @@ def publishers():
         cnt = Invoice.query.join(InvoiceItem).filter(InvoiceItem.book_id.in_(book_ids), Invoice.status=='completed').distinct().count() if book_ids else 0
         data.append({'publisher': p, 'inv_count': cnt})
     return render_template('publishers.html', publishers=data)
+
 @app.route('/publishers/add', methods=['POST'])
 @login_required
 @manager_required
 def add_publisher(): 
     db.session.add(Publisher(name=request.form['name'], address=request.form.get('address',''), phone=request.form.get('phone',''), email=request.form.get('email',''))); db.session.commit(); flash('تم إضافة الناشر', 'success')
     return redirect(url_for('publishers'))
+
 @app.route('/publishers/<int:id>/statement')
 @login_required
 def publisher_statement(id):
     p = db.session.get(Publisher, id)
     if not p: flash('غير موجود', 'danger'); return redirect(url_for('publishers'))
     return render_template('publisher_statement.html', publisher=p, events=PublisherTransaction.query.filter_by(publisher_id=id).order_by(PublisherTransaction.created_at).all(), current_date=datetime.now())
+
 @app.route('/publishers/<int:id>/transaction', methods=['POST'])
 @login_required
 def add_publisher_transaction(id):
@@ -413,6 +395,7 @@ def add_publisher_transaction(id):
     if am>0:
         db.session.add(PublisherTransaction(publisher_id=id, trans_type=tp, reference=request.form.get('reference',''), debit=am if tp=='purchase' else 0, credit=am if tp=='payment' else 0, notes=request.form.get('notes',''))); db.session.commit(); flash('تم تسجيل العملية', 'success')
     return redirect(url_for('publisher_statement', id=id))
+
 @app.route('/publishers/<int:id>/invoices')
 @login_required
 def publisher_invoices(id):
@@ -426,6 +409,7 @@ def publisher_invoices(id):
 @app.route('/categories')
 @login_required
 def categories(): return render_template('categories.html', categories=Category.query.all())
+
 @app.route('/categories/add', methods=['POST'])
 @login_required
 @manager_required
@@ -436,31 +420,24 @@ def add_category(): db.session.add(Category(name=request.form['name'], descripti
 def books():
     branch_id = session.get('branch_id') or current_user.branch_id
     books = Book.query.filter_by(is_active=True).all()
-    
-    # ✅ جلب كميات المخزون للفرع الحالي في استعلام واحد سريع
     stock_map = {inv.book_id: inv.quantity for inv in BranchInventory.query.filter_by(branch_id=branch_id).all()}
-    
     return render_template('books.html', 
         books=books, 
-        stock_map=stock_map,  # ✅ نمرر خريطة الكميات للقالب
+        stock_map=stock_map,
         authors=Author.query.all(), 
         categories=Category.query.all(), 
         publishers=Publisher.query.all(), 
         branches=Branch.query.all()
     )
+
 @app.route('/books/add', methods=['POST'])
 @login_required
 @manager_required
 def add_book():
     try:
-        # ✅ تعريف branch_id أولاً
         branch_id = session.get('branch_id') or current_user.branch_id
-        
-        # قراءة البيانات بأمان
         title = request.form['title']
         isbn = request.form.get('isbn', '')
-        
-        # دوال آمنة للأرقام
         def sf(v): return float(v) if v and v.strip() else 0.0
         def si(v): return int(v) if v and v.strip() else 0
         
@@ -471,12 +448,10 @@ def add_book():
         pages = si(request.form.get('pages'))
         year = si(request.form.get('publication_year')) or 2024
         
-        # التعامل مع القوائم المنسدلة
         author_id = int(request.form.get('author_id')) if request.form.get('author_id') else None
         category_id = int(request.form.get('category_id')) if request.form.get('category_id') else None
         publisher_id = int(request.form.get('publisher_id')) if request.form.get('publisher_id') else None
 
-        # إنشاء الكتاب
         b = Book(
             isbn=isbn, title=title, author_id=author_id, category_id=category_id,
             publisher_id=publisher_id, description=request.form.get('description', ''),
@@ -485,26 +460,22 @@ def add_book():
             edition=request.form.get('edition', '')
         )
         db.session.add(b)
-        db.session.flush()  # لحفظ الـ ID فوراً
+        db.session.flush()
         
-        # ✅ إضافة المخزون للفرع الصحيح
         qty = si(request.form.get('quantity'))
         if branch_id and qty > 0:
             inv = BranchInventory.query.filter_by(branch_id=branch_id, book_id=b.id).first()
-            if inv:
-                inv.quantity += qty
-            else:
-                db.session.add(BranchInventory(branch_id=branch_id, book_id=b.id, quantity=qty))
+            if inv: inv.quantity += qty
+            else: db.session.add(BranchInventory(branch_id=branch_id, book_id=b.id, quantity=qty))
         
         db.session.commit()
         flash('✅ تم إضافة الكتاب بنجاح', 'success')
         return redirect(url_for('books'))
-        
     except Exception as e:
         db.session.rollback()
-        print(f"❌ Error: {e}")
         flash(f'❌ خطأ: {str(e)}', 'danger')
         return redirect(url_for('books'))
+
 @app.route('/books/<int:id>/edit', methods=['POST'])
 @login_required
 @manager_required
@@ -516,6 +487,7 @@ def edit_book(id):
         b.pages, b.description = int(request.form.get('pages',0)), request.form.get('description','')
         db.session.commit(); flash('تم تحديث الكتاب', 'success')
     return redirect(url_for('books'))
+
 @app.route('/books/<int:id>/delete', methods=['POST'])
 @login_required
 @admin_required
@@ -523,8 +495,7 @@ def delete_book(id):
     b = db.session.get(Book, id)
     if b: b.is_active = False; db.session.commit(); flash('تم تعطيل الكتاب', 'success')
     return redirect(url_for('books'))
-@app.route('/import_books', methods=['POST'])
-@app.route('/import_books', methods=['POST'])
+
 @app.route('/import_books', methods=['POST'])
 @login_required
 @manager_required
@@ -541,12 +512,9 @@ def import_books():
         added, updated, skipped = 0, 0, 0
         
         for idx, r in df.iterrows():
-            # 1. استخراج البيانات وتنظيفها
-            # إصلاح مشكلة الـ ISBN العشري (978...98.0)
             raw_isbn = r.get('ISBN')
             isbn = ""
             if pd.notna(raw_isbn):
-                # تحويل من float إلى int ثم إلى string لإزالة .0
                 isbn = str(int(raw_isbn)) if isinstance(raw_isbn, (int, float)) else str(raw_isbn).strip()
             
             title = str(r.get('Title', '')).strip()
@@ -554,7 +522,6 @@ def import_books():
             publisher_name = str(r.get('Publisher', '')).strip()
             category_name = str(r.get('Category', '')).strip()
             
-            # تحويل الأرقام بأمان
             try: cost_price = float(r.get('Cost Price', 0))
             except: cost_price = 0.0
             
@@ -568,17 +535,15 @@ def import_books():
                 skipped += 1
                 continue
 
-            # 2. البحث أو إنشاء المؤلف (Author)
             author_id = None
             if author_name and author_name.lower() != 'nan':
                 author = Author.query.filter_by(name=author_name).first()
                 if not author:
                     author = Author(name=author_name, nationality='')
                     db.session.add(author)
-                    db.session.flush() # لحفظ الـ ID فوراً
+                    db.session.flush()
                 author_id = author.id
             
-            # 3. البحث أو إنشاء الناشر (Publisher)
             publisher_id = None
             if publisher_name and publisher_name.lower() != 'nan':
                 publisher = Publisher.query.filter_by(name=publisher_name).first()
@@ -588,7 +553,6 @@ def import_books():
                     db.session.flush()
                 publisher_id = publisher.id
             
-            # 4. البحث أو إنشاء التصنيف (Category)
             category_id = None
             if category_name and category_name.lower() != 'nan':
                 category = Category.query.filter_by(name=category_name).first()
@@ -598,7 +562,6 @@ def import_books():
                     db.session.flush()
                 category_id = category.id
             
-            # 5. البحث عن الكتاب
             book = None
             if isbn and isbn != 'nan':
                 book = Book.query.filter_by(isbn=isbn).first()
@@ -608,21 +571,15 @@ def import_books():
                     book = Book.query.filter_by(title=title).first()
             
             if book:
-                # تحديث الكتاب الحالي
                 book.title = title
                 if isbn and isbn != 'nan': book.isbn = isbn
-                
-                # ربط المؤلف والناشر والتصنيف
                 if author_id: book.author_id = author_id
                 if publisher_id: book.publisher_id = publisher_id
                 if category_id: book.category_id = category_id
-                
-                # تحديث الأسعار
                 if cost_price > 0: book.cost_price = cost_price
                 if selling_price > 0: book.selling_price = selling_price
                 updated += 1
             else:
-                # إنشاء كتاب جديد مع الروابط
                 new_book = Book(
                     isbn=isbn if isbn and isbn != 'nan' else None,
                     title=title,
@@ -638,28 +595,19 @@ def import_books():
                 book = new_book
                 added += 1
             
-            # 6. تحديث المخزون
-            # ملاحظة: في ملفك الكمية كانت 0، لذا لن يتغير المخزون إلا إذا غيرت الكمية في الإكسل
             if quantity > 0 and tbr:
                 inv = BranchInventory.query.filter_by(branch_id=tbr, book_id=book.id).first()
-                if inv:
-                    inv.quantity += quantity
-                else:
-                    db.session.add(BranchInventory(branch_id=tbr, book_id=book.id, quantity=quantity))
+                if inv: inv.quantity += quantity
+                else: db.session.add(BranchInventory(branch_id=tbr, book_id=book.id, quantity=quantity))
         
         db.session.commit()
         flash(f'✅ تم الاستيراد بنجاح! | أُضيف: {added} | حُدّث: {updated} | تُخطّي: {skipped}', 'success')
-        
     except Exception as e:
         db.session.rollback()
         flash(f'❌ خطأ في الاستيراد: {str(e)}', 'danger')
-        print(f"Import Error: {e}")
-        import traceback
-        traceback.print_exc()
     
     return redirect(url_for('books'))
-# ===================== المخزون =====================
-# ===================== المخزون =====================
+
 # ===================== المخزون =====================
 @app.route('/inventory')
 @login_required
@@ -667,24 +615,19 @@ def inventory():
     branch_id = session.get('branch_id') or current_user.branch_id
     session['branch_id'] = branch_id
 
-    # 1. التأكد من وجود سجل مخزون حقيقي لكل كتاب (لحل مشكلة الكتب المفقودة)
     all_books = Book.query.filter_by(is_active=True).all()
     for book in all_books:
         inv = BranchInventory.query.filter_by(branch_id=branch_id, book_id=book.id).first()
         if not inv:
-            # إنشاء سجل مخزون حقيقي بكمية 0
             new_inv = BranchInventory(branch_id=branch_id, book_id=book.id, quantity=0, last_updated=datetime.utcnow())
             db.session.add(new_inv)
     
-    # حفظ السجلات الجديدة في قاعدة البيانات
     db.session.commit()
 
-    # 2. جلب بيانات المخزون مع معلومات الكتب (JOIN)
     inventory_data = db.session.query(BranchInventory, Book).join(Book).filter(
         BranchInventory.branch_id == branch_id
-    ).order_by(BranchInventory.quantity.asc()).all()  # ترتيب من الأقل للأعلى
+    ).order_by(BranchInventory.quantity.asc()).all()
 
-    # جلب الكتب للقائمة المنسدلة
     books = Book.query.filter_by(is_active=True).order_by(Book.title).all()
 
     return render_template('inventory.html', 
@@ -714,7 +657,6 @@ def add_stock():
         
     return redirect(url_for('inventory'))
 
-# ===================== تحديث المخزون (الدالة الوحيدة) =====================
 @app.route('/inventory/<int:id>/update', methods=['POST'])
 @login_required
 def update_stock(id):
@@ -734,7 +676,6 @@ def update_stock(id):
         inv_item.quantity = new_qty
         inv_item.last_updated = datetime.utcnow()
         
-        # تسجيل حركة المخزون للفرق
         diff = new_qty - old_qty
         if diff != 0:
             db.session.add(StockMovement(
@@ -754,6 +695,7 @@ def update_stock(id):
         flash(f'❌ خطأ: {str(e)}', 'danger')
     
     return redirect(url_for('inventory'))
+
 # ===================== نقطة البيع (POS) =====================
 @app.route('/pos')
 @login_required
@@ -767,9 +709,6 @@ def mobile_pos():
     br = session.get('branch_id'); stk = {i.book_id: i.quantity for i in BranchInventory.query.filter_by(branch_id=br).all()}
     return render_template('mobile_pos.html', books=Book.query.filter_by(is_active=True).all(), customers=Customer.query.all(), book_stock=stk)
 
-# ===================== بحث الكتب =====================
-
-# ===================== بحث الكتب (مصحح) =====================
 @app.route('/api/book_search')
 @login_required
 def search_book():
@@ -777,29 +716,23 @@ def search_book():
         q = request.args.get('q', '').strip()
         branch_id = session.get('branch_id') or getattr(current_user, 'branch_id', None)
         
-        # 1. جلب جميع الكتب النشطة أولاً
         if not q or len(q) < 2:
             books = Book.query.filter_by(is_active=True).limit(5000).all()
         else:
             search_term = f"%{q}%"
             books = Book.query.filter(
                 Book.is_active == True,
-                db.or_(
-                    Book.title.like(search_term),
-                    Book.isbn.like(search_term)
-                )
+                db.or_(Book.title.like(search_term), Book.isbn.like(search_term))
             ).limit(5000).all()
         
-        # 2. جلب جميع سجلات المخزون للفرع الحالي في استعلام واحد (أسرع وأدق)
         stock_map = {}
         if branch_id:
             all_inv = BranchInventory.query.filter_by(branch_id=branch_id).all()
             stock_map = {inv.book_id: inv.quantity for inv in all_inv}
         
-        # 3. تجهيز النتيجة
         result = []
         for b in books:
-            stock = stock_map.get(b.id, 0)  # ✅ جلب المخزون من الخريطة
+            stock = stock_map.get(b.id, 0)
             discount = float(b.discount_percent or 0)
             selling = float(b.selling_price or 0)
             final_price = selling * (1 - discount / 100)
@@ -811,36 +744,10 @@ def search_book():
                 'price': selling,
                 'final_price': round(final_price, 2),
                 'discount': discount,
-                'stock': stock  # ✅ الآن سيظهر الرصيد الصحيح
+                'stock': stock
             })
         
         return jsonify({'books': result, 'total_count': len(result)})
-        
-    except Exception as e:
-        print(f"🔍 خطأ البحث: {e}")
-        return jsonify({'books': [], 'total_count': 0})
-    try:
-        q = request.args.get('q', '').strip()
-        branch_id = session.get('branch_id') or getattr(current_user, 'branch_id', None)
-        total_count = 0
-        if branch_id:
-            total_count = db.session.query(db.func.count(BranchInventory.book_id)).filter(BranchInventory.branch_id == branch_id, BranchInventory.quantity > 0).join(Book).filter(Book.is_active == True).scalar() or 0
-        if not q or len(q) < 2:
-            books = Book.query.filter(Book.is_active == True).limit(50).all()
-        else:
-            search_term = f"%{q}%"
-            books = Book.query.filter(Book.is_active == True, db.or_(Book.title.like(search_term), Book.isbn.like(search_term))).limit(50).all()
-        result = []
-        for b in books:
-            stock = 0
-            if branch_id:
-                inv = BranchInventory.query.filter_by(branch_id=branch_id, book_id=b.id).first()
-                if inv: stock = inv.quantity
-            discount = float(b.discount_percent or 0)
-            selling = float(b.selling_price or 0)
-            final_price = selling * (1 - discount / 100)
-            result.append({'id': b.id, 'title': b.title or 'بدون عنوان', 'isbn': b.isbn or '', 'price': selling, 'final_price': round(final_price, 2), 'discount': discount, 'stock': stock})
-        return jsonify({'books': result, 'total_count': total_count})
     except Exception as e:
         print(f"🔍 خطأ البحث: {e}")
         return jsonify({'books': [], 'total_count': 0})
@@ -871,9 +778,7 @@ def get_branch_books(branch_id):
 @app.route('/api/create_invoice', methods=['POST'])
 @login_required
 def create_invoice():
-    """إنشاء فاتورة جديدة - نسخة محصنة ضد الأخطاء"""
     try:
-        # 1. التحقق من نوع البيانات
         if not request.is_json:
             return jsonify({'error': 'خطأ: البيانات يجب أن تكون بصيغة JSON'}), 400
             
@@ -887,12 +792,10 @@ def create_invoice():
         if not items or not isinstance(items, list):
             return jsonify({'error': 'السلة فارغة'}), 400
 
-        # 2. دوال مساعدة آمنة للأرقام
         def sf(v, d=0.0):
             try: return float(v) if v is not None else d
             except: return d
 
-        # 3. استخراج البيانات
         customer_id = int(data['customer_id']) if data.get('customer_id') else None
         subtotal = sf(data.get('subtotal'))
         discount_pct = sf(data.get('discount_pct'))
@@ -903,12 +806,10 @@ def create_invoice():
         payment_method = data.get('payment_method', 'cash')
         save_to_db = data.get('save_to_db', True)
 
-        # 4. حالة الطباعة فقط (بدون حفظ)
         if not save_to_db:
             inv_num = generate_invoice_number(branch_id)
             return jsonify({'success': True, 'print_only': True, 'invoice_number': inv_num, 'total': total})
 
-        # 5. إنشاء كائن الفاتورة
         inv_num = generate_invoice_number(branch_id)
         branch = db.session.get(Branch, branch_id)
         extra_notes = json.dumps({'cash_discount': cash_discount, 'delivery_fee': delivery_fee}, ensure_ascii=False)
@@ -930,28 +831,23 @@ def create_invoice():
             notes=extra_notes
         )
         db.session.add(new_invoice)
-        db.session.flush()  # للحصول على ID الفاتورة قبل الحفظ النهائي
+        db.session.flush()
 
-        # 6. معالجة عناصر الفاتورة واحدة تلو الأخرى
         for item in items:
             book_id = int(item.get('book_id'))
             qty = int(item.get('quantity', 1))
             unit_price = sf(item.get('unit_price'))
             
-            # التحقق من المخزون
             stock = BranchInventory.query.filter_by(branch_id=branch_id, book_id=book_id).first()
             if not stock or stock.quantity < qty:
                 db.session.rollback()
                 return jsonify({'error': f'الكمية غير متوفرة للكتاب (رقم: {book_id})'}), 400
             
-            # خصم الكمية وتحديث المخزون
             stock.quantity -= qty
             stock.last_updated = datetime.utcnow()
             
-            # حساب خصم العنصر
             item_discount = (unit_price * qty) * (discount_pct / 100)
             
-            # إضافة عنصر الفاتورة
             db.session.add(InvoiceItem(
                 invoice_id=new_invoice.id,
                 book_id=book_id,
@@ -961,7 +857,6 @@ def create_invoice():
                 total=(unit_price * qty) - item_discount
             ))
             
-            # تسجيل حركة المخزون
             db.session.add(StockMovement(
                 branch_id=branch_id,
                 book_id=book_id,
@@ -971,14 +866,12 @@ def create_invoice():
                 created_by=current_user.id
             ))
 
-        # 7. تحديث بيانات العميل (نقاط الولاء وإجمالي المشتريات)
         if customer_id:
             cust = db.session.get(Customer, customer_id)
             if cust:
                 cust.total_purchases = (cust.total_purchases or 0) + total
                 cust.loyalty_points = (cust.loyalty_points or 0) + int(total / 10)
 
-        # 8. الحفظ النهائي والرد الناجح ✅
         db.session.commit()
         return jsonify({'success': True, 'invoice_number': inv_num, 'invoice_id': new_invoice.id})
 
@@ -987,21 +880,16 @@ def create_invoice():
         import traceback
         print(f"\n🔥 خطأ في create_invoice: {e}\n{traceback.format_exc()}\n")
         return jsonify({'error': f'حدث خطأ أثناء حفظ الفاتورة: {str(e)}'}), 500
-    
-    # ✅ ضمان وجود return في نهاية الدالة (خط أمان إضافي)
-    return jsonify({'error': 'حدث خطأ غير متوقع'}), 500
-# ===================== الفواتير والإيميل =====================
+
+# ===================== الفواتير =====================
 @app.route('/invoices')
 @login_required
 def invoices():
     invoices_list = Invoice.query.order_by(Invoice.created_at.desc()).all()
-    
-    # ✅ جلب بيانات العميل يدوياً لكل فاتورة
     for inv in invoices_list:
         inv.display_customer = None
         if inv.customer_id:
             inv.display_customer = Customer.query.get(inv.customer_id)
-            
     return render_template('invoices.html', invoices=invoices_list)
 
 @app.route('/invoices/<int:id>')
@@ -1012,7 +900,6 @@ def view_invoice(id):
         flash('الفاتورة غير موجودة', 'danger')
         return redirect(url_for('invoices'))
 
-    # ✅ جلب بيانات العميل بشكل صريح
     customer = None
     if inv.customer_id:
         customer = Customer.query.get(inv.customer_id)
@@ -1028,11 +915,12 @@ def view_invoice(id):
 
     return render_template('invoice_detail.html', 
                          invoice=inv, 
-                         customer=customer,  # ✅ متغير واضح للقالب
+                         customer=customer,
                          settings=AppSettings.query.first(),
                          cash_discount=extra_data.get('cash_discount', 0),
                          delivery_fee=extra_data.get('delivery_fee', 0),
                          items_data=items_data)
+
 @app.route('/invoices/<int:id>/return', methods=['POST'])
 @login_required
 @manager_required
@@ -1041,8 +929,6 @@ def return_invoice(id):
     if inv and inv.status == 'completed':
         inv.status = 'returned'
         br = session.get('branch_id')
-        
-        # ✅ FIX: جلب العناصر يدوياً لتجنب خطأ الـ AttributeError
         items = InvoiceItem.query.filter_by(invoice_id=id).all()
         
         for it in items:
@@ -1059,17 +945,28 @@ def return_invoice(id):
         db.session.commit()
         flash('تم إرجاع الفاتورة بنجاح', 'success')
     return redirect(url_for('invoices'))
-    inv = db.session.get(Invoice, id)
-    if inv and inv.status == 'completed':
-        inv.status = 'returned'; br = session.get('branch_id')
-        for it in inv.items:
-            ir = BranchInventory.query.filter_by(branch_id=br, book_id=it.book_id).first()
-            if ir: ir.quantity += it.quantity
-            db.session.add(StockMovement(branch_id=br, book_id=it.book_id, quantity=it.quantity, movement_type='in', reference=inv.invoice_number, notes='إرجاع', created_by=current_user.id))
-        if inv.customer_id:
-            c = db.session.get(Customer, inv.customer_id)
-            if c: c.total_purchases -= inv.total; c.loyalty_points -= int(inv.total/10)
-        db.session.commit(); flash('تم إرجاع الفاتورة بنجاح', 'success')
+
+@app.route('/invoices/<int:id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def delete_invoice(id):
+    invoice = db.session.get(Invoice, id)
+    if not invoice:
+        flash('❌ الفاتورة غير موجودة', 'danger')
+        return redirect(url_for('invoices'))
+
+    items = InvoiceItem.query.filter_by(invoice_id=id).all()
+    for item in items:
+        stock = BranchInventory.query.filter_by(branch_id=invoice.branch_id, book_id=item.book_id).first()
+        if stock:
+            stock.quantity += item.quantity
+
+    InvoiceItem.query.filter_by(invoice_id=id).delete()
+    StockMovement.query.filter_by(reference=invoice.invoice_number).delete()
+    db.session.delete(invoice)
+    db.session.commit()
+
+    flash('✅ تم حذف الفاتورة نهائياً واسترجاع المخزون', 'success')
     return redirect(url_for('invoices'))
 
 @app.route('/api/send-invoice-email/<int:invoice_id>', methods=['POST'])
@@ -1087,24 +984,6 @@ def send_invoice_email(invoice_id):
     html_content = f"""<div style="font-family: 'Segoe UI', sans-serif; direction: rtl; color: #333; max-width: 600px; margin: auto;"><div style="background: #f8f9fa; padding: 20px; border-bottom: 3px solid #1e3c72;"><h2 style="color: #1e3c72; margin: 0;">{settings.company_name or 'نظام المكتبة'}</h2><p style="margin: 5px 0 0; color: #666;">فاتورة مبيعات رسمية</p></div><div style="padding: 20px;"><p>عزيزي العميل: <strong>{invoice.customer_obj.name if invoice.customer_obj else 'العميل العام'}</strong></p><p>شكراً لتعاملكم معنا. تفاصيل الفاتورة كالتالي:</p><table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #fff;"><thead style="background: #1e3c72; color: white;"><tr><th style="padding: 10px; text-align: right;">الصنف</th><th style="padding: 10px;">الكمية</th><th style="padding: 10px;">السعر</th><th style="padding: 10px;">الإجمالي</th></tr></thead><tbody>{items_html}</tbody></table><div style="background: #f1f8ff; padding: 15px; border-radius: 5px; margin-top: 20px;"><p><strong>المجموع:</strong> {invoice.subtotal:.2f} {settings.currency}</p><p><strong>الضريبة (5%):</strong> {invoice.tax:.2f}</p><h3 style="color: #1e3c72; margin: 10px 0 0;">الإجمالي النهائي: {invoice.total:.2f} {settings.currency}</h3></div><p style="margin-top: 30px; font-size: 12px; color: #888; text-align: center;">تم إنشاء هذه الفاتورة إلكترونياً وهي سارية المفعول.<br>{settings.address or ''}</p></div></div>"""
     
     result = send_email(f"فاتورة رقم {invoice.invoice_number} - {settings.company_name or 'نظام المكتبة'}", invoice.customer_obj.email, html_content)
-    return jsonify(result) if result['success'] else (jsonify(result), 500)
-
-@app.route('/api/send-quotation-email', methods=['POST'])
-@login_required
-def send_quotation_email():
-    data = request.get_json()
-    email = data.get('email')
-    items = data.get('items', [])
-    total = data.get('total', 0)
-    if not email: return jsonify({'error': 'البريد الإلكتروني مطلوب'}), 400
-    
-    items_html = ""
-    for item in items:
-        items_html += f"""<tr style="border-bottom: 1px solid #eee;"><td style="padding: 10px;">{item['title']}</td><td style="padding: 10px; text-align: center;">{item['qty']}</td><td style="padding: 10px; text-align: center;">{item['price']:.2f}</td><td style="padding: 10px; text-align: center; font-weight: bold;">{(item['qty'] * item['price']):.2f}</td></tr>"""
-    
-    html_content = f"""<div style="font-family: 'Segoe UI', sans-serif; direction: rtl; color: #333; max-width: 600px; margin: auto;"><div style="background: #e6f7e9; padding: 20px; border-bottom: 3px solid #28a745;"><h2 style="color: #28a745; margin: 0;">{settings.company_name or 'نظام المكتبة'}</h2><p style="margin: 5px 0 0; color: #666;">عرض أسعار</p></div><div style="padding: 20px;"><p>إلى: <strong>العميل الكريم</strong></p><p>يسعدنا تقديم عرض الأسعار التالي لكم:</p><table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #fff;"><thead style="background: #28a745; color: white;"><tr><th style="padding: 10px; text-align: right;">الصنف</th><th style="padding: 10px;">الكمية</th><th style="padding: 10px;">السعر</th><th style="padding: 10px;">الإجمالي</th></tr></thead><tbody>{items_html}</tbody></table><div style="background: #e6f7e9; padding: 15px; border-radius: 5px; margin-top: 20px;"><h3 style="color: #28a745; margin: 0;">الإجمالي المطلوب: {total:.2f} {settings.currency}</h3></div><p style="font-size: 12px; color: #888; margin-top: 10px;">* هذا العرض ساري المفعول لمدة 15 يوماً.</p></div></div>"""
-    
-    result = send_email(f"عرض أسعار - {settings.company_name or 'نظام المكتبة'}", email, html_content)
     return jsonify(result) if result['success'] else (jsonify(result), 500)
 
 # ===================== الإعدادات =====================
@@ -1154,7 +1033,6 @@ def reports():
     total_items = sum(sum(it.quantity for it in InvoiceItem.query.filter_by(invoice_id=inv.id).all()) for inv in invoices)
     avg_invoice = total_sales / len(invoices) if invoices else 0
     
-    # ✅ FIX: جلب عناصر الفواتير دفعة واحدة بدلاً من inv.items
     invoice_ids = [inv.id for inv in invoices]
     all_items = InvoiceItem.query.filter(InvoiceItem.invoice_id.in_(invoice_ids)).all() if invoice_ids else []
 
@@ -1183,86 +1061,15 @@ def reports():
                          total_sales=total_sales, total_discount=total_discount, total_tax=total_tax, total_items=total_items,
                          avg_invoice=avg_invoice, invoice_count=len(invoices), top_books=top_books, payment_stats=payment_stats,
                          daily_chart=daily_chart, currency=settings.currency if settings else 'د.إ')
-    branch_id = session.get('branch_id')
-    today = datetime.now().date()
-    start_date = request.args.get('start_date', (today - timedelta(days=30)).strftime('%Y-%m-%d'))
-    end_date = request.args.get('end_date', today.strftime('%Y-%m-%d'))
-    if current_user.role == 'admin':
-        branches = Branch.query.all()
-        selected_branch = request.args.get('branch_id', type=int)
-        branch_filter = Invoice.branch_id == selected_branch if selected_branch else True
-    else:
-        branches = [Branch.query.get(branch_id)] if branch_id else []
-        branch_filter = Invoice.branch_id == branch_id
-        selected_branch = branch_id
-    invoices = Invoice.query.filter(branch_filter, Invoice.status == 'completed', Invoice.created_at >= datetime.strptime(start_date, '%Y-%m-%d'), Invoice.created_at <= datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)).all()
-    total_sales = sum(inv.total for inv in invoices)
-    total_discount = sum(inv.discount for inv in invoices)
-    total_tax = sum(inv.tax for inv in invoices)
-    total_items = sum(sum(it.quantity for it in inv.items) for inv in invoices)
-    avg_invoice = total_sales / len(invoices) if invoices else 0
-    book_sales = {}
-    for inv in invoices:
-        for item in inv.items:
-            bid = item.book_id
-            if bid not in book_sales: book_sales[bid] = {'title': db.session.get(Book, bid).title if db.session.get(Book, bid) else 'غير معروف', 'qty': 0, 'revenue': 0}
-            book_sales[bid]['qty'] += item.quantity; book_sales[bid]['revenue'] += item.total
-    top_books = sorted(book_sales.values(), key=lambda x: x['revenue'], reverse=True)[:10]
-    payment_stats = {}
-    for inv in invoices: payment_stats[inv.payment_method] = payment_stats.get(inv.payment_method, 0) + inv.total
-    daily = {}
-    for inv in invoices: d = inv.created_at.date().strftime('%Y-%m-%d'); daily[d] = daily.get(d, 0) + inv.total
-    daily_chart = [{'date': k, 'value': v} for k, v in sorted(daily.items())]
-    settings = AppSettings.query.first()
-    return render_template('reports.html', branches=branches, selected_branch=selected_branch, start_date=start_date, end_date=end_date,
-                         total_sales=total_sales, total_discount=total_discount, total_tax=total_tax, total_items=total_items,
-                         avg_invoice=avg_invoice, invoice_count=len(invoices), top_books=top_books, payment_stats=payment_stats,
-                         daily_chart=daily_chart, currency=settings.currency if settings else 'د.إ')
-
-@app.route('/reports/export')
-@login_required
-@manager_required
-def export_report_excel():
-    try:
-        branch_id = session.get('branch_id')
-        start_date = request.args.get('start_date', (datetime.now().date() - timedelta(days=30)).strftime('%Y-%m-%d'))
-        end_date = request.args.get('end_date', datetime.now().date().strftime('%Y-%m-%d'))
-        branch_names = {b.id: b.name for b in Branch.query.all()}
-        if current_user.role == 'admin':
-            selected = request.args.get('branch_id', type=int)
-            if selected: invs = Invoice.query.filter(Invoice.branch_id==selected, Invoice.status=='completed', Invoice.created_at>=datetime.strptime(start_date,'%Y-%m-%d'), Invoice.created_at<=datetime.strptime(end_date,'%Y-%m-%d')+timedelta(days=1)).all(); branch_name = branch_names.get(selected, 'All')
-            else: invs = Invoice.query.filter(Invoice.status=='completed', Invoice.created_at>=datetime.strptime(start_date,'%Y-%m-%d'), Invoice.created_at<=datetime.strptime(end_date,'%Y-%m-%d')+timedelta(days=1)).all(); branch_name = 'All_Branches'
-        else:
-            invs = Invoice.query.filter(Invoice.branch_id==branch_id, Invoice.status=='completed', Invoice.created_at>=datetime.strptime(start_date,'%Y-%m-%d'), Invoice.created_at<=datetime.strptime(end_date,'%Y-%m-%d')+timedelta(days=1)).all()
-            branch_name = branch_names.get(branch_id, 'Branch').replace(' ', '_')
-        safe_branch = "".join(c for c in branch_name if c.isalnum() or c in (' ', '_')).replace(' ', '_')
-        fname = f"Sales_Report_{safe_branch}_{start_date}_to_{end_date}.xlsx"
-        data = [{'Invoice_No': i.invoice_number, 'Date': i.created_at.strftime('%Y-%m-%d %H:%M'), 'Customer': i.customer_obj.name if i.customer_obj else 'Walk-in', 'Subtotal': i.subtotal, 'Discount': i.discount, 'Tax': i.tax, 'Total': i.total, 'Payment_Method': {'cash':'Cash','card':'Card','transfer':'Transfer','credit':'Credit'}.get(i.payment_method, i.payment_method), 'Cashier': i.cashier_user.full_name if i.cashier_user else '-', 'Branch': branch_names.get(i.branch_id, '-')} for i in invs]
-        df = pd.DataFrame(data)
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Sales')
-            ws = writer.sheets['Sales']
-            for col in ws.columns:
-                max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
-                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 25)
-        output.seek(0)
-        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=fname)
-    except Exception as e:
-        print(f"Export Error: {e}"); traceback.print_exc()
-        flash(f'فشل التصدير: {str(e)}', 'danger')
-        return redirect(url_for('reports'))
 
 @app.route('/books/<int:id>/statement')
 @login_required
 def book_statement(id):
-    """عرض كشف حساب مبيعات لكتاب محدد"""
     book = db.session.get(Book, id)
     if not book:
         flash('❌ الكتاب غير موجود', 'danger')
         return redirect(url_for('books'))
 
-    # جلب جميع عناصر الفواتير التي تحتوي على هذا الكتاب مع بيانات الفاتورة
     sales_items = db.session.query(InvoiceItem, Invoice).join(
         Invoice, InvoiceItem.invoice_id == Invoice.id
     ).filter(
@@ -1270,13 +1077,11 @@ def book_statement(id):
         Invoice.status == 'completed'
     ).order_by(Invoice.created_at.desc()).all()
 
-    # جلب بيانات العميل يدوياً لكل فاتورة لتجنب مشاكل العلاقات
     for item, inv in sales_items:
         inv.display_customer = None
         if inv.customer_id:
             inv.display_customer = Customer.query.get(inv.customer_id)
 
-    # حساب المجاميع
     total_qty_cash = 0
     total_qty_credit = 0
     total_revenue = 0.0
@@ -1294,194 +1099,6 @@ def book_statement(id):
                          total_qty_cash=total_qty_cash,
                          total_qty_credit=total_qty_credit,
                          total_revenue=total_revenue)
-    """عرض كشف حساب مبيعات لكتاب محدد"""
-    book = db.session.get(Book, id)
-    if not book:
-        flash('❌ الكتاب غير موجود', 'danger')
-        return redirect(url_for('books'))
-
-    # جلب جميع عناصر الفواتير التي تحتوي على هذا الكتاب
-    # نربط InvoiceItem مع Invoice لمعرفة طريقة الدفع والتاريخ
-    sales_items = db.session.query(InvoiceItem, Invoice).join(
-        Invoice, InvoiceItem.invoice_id == Invoice.id
-    ).filter(
-        InvoiceItem.book_id == id,
-        Invoice.status == 'completed'  # فقط الفواتير المكتملة
-    ).order_by(Invoice.created_at.desc()).all()
-
-    # حساب المجاميع
-    total_qty_cash = 0
-    total_qty_credit = 0
-    total_revenue = 0.0
-
-    for item, inv in sales_items:
-        total_revenue += item.total
-        if inv.payment_method == 'credit':
-            total_qty_credit += item.quantity
-        else:
-            # النقدي، البطاقة، والتحويل تحسب كـ "نقد/فوري"
-            total_qty_cash += item.quantity
-
-    return render_template('book_statement.html', 
-                         book=book, 
-                         sales=sales_items,
-                         total_qty_cash=total_qty_cash,
-                         total_qty_credit=total_qty_credit,
-                         total_revenue=total_revenue)
-
-@app.route('/reports/income-statement')
-@login_required
-@manager_required
-def income_statement():
-    branch_id = session.get('branch_id') or current_user.branch_id
-    today = datetime.now().date()
-    start_str = request.args.get('start_date', (today - timedelta(days=30)).strftime('%Y-%m-%d'))
-    end_str = request.args.get('end_date', today.strftime('%Y-%m-%d'))
-    start_dt = datetime.strptime(start_str, '%Y-%m-%d')
-    end_dt = datetime.strptime(end_str, '%Y-%m-%d') + timedelta(days=1)
-    inv_q = Invoice.query.filter(Invoice.status=='completed', Invoice.created_at>=start_dt, Invoice.created_at<end_dt)
-    if current_user.role != 'admin': inv_q = inv_q.filter_by(branch_id=branch_id)
-    invoices = inv_q.all()
-    total_revenue = sum(inv.total for inv in invoices)
-    total_cogs = 0.0
-    for inv in invoices:
-        for item in inv.items:
-            book = db.session.get(Book, item.book_id)
-            if book: total_cogs += (item.quantity * book.cost_price)
-    gross_profit = total_revenue - total_cogs
-    exp_q = Expense.query.filter(Expense.expense_date>=start_dt, Expense.expense_date<end_dt)
-    if current_user.role != 'admin': exp_q = exp_q.filter_by(branch_id=branch_id)
-    expenses = exp_q.all()
-    total_expenses = sum(e.amount for e in expenses)
-    net_profit = gross_profit - total_expenses
-    exp_details = {}
-    for e in expenses:
-        name = e.account_obj.name if e.account_obj else 'مصروفات أخرى'
-        exp_details[name] = exp_details.get(name, 0) + e.amount
-    return render_template('income_statement.html', total_revenue=total_revenue, total_cogs=total_cogs, gross_profit=gross_profit, total_expenses=total_expenses, net_profit=net_profit, exp_details=exp_details, start_date=start_str, end_date=end_str)
-
-@app.route('/reports/balance-sheet')
-@login_required
-@manager_required
-def balance_sheet():
-    inv_val = db.session.query(db.func.sum(BranchInventory.quantity * Book.cost_price)).join(Book).scalar() or 0.0
-    total_inv = db.session.query(db.func.sum(Invoice.total)).filter(Invoice.status=='completed').scalar() or 0.0
-    total_pay = db.session.query(db.func.sum(CustomerPayment.amount)).scalar() or 0.0
-    receivables = max(total_inv - total_pay, 0)
-    total_exp = db.session.query(db.func.sum(Expense.amount)).scalar() or 0.0
-    cogs = db.session.query(db.func.sum(InvoiceItem.quantity * Book.cost_price)).join(Book).join(Invoice).filter(Invoice.status=='completed').scalar() or 0.0
-    net_cash = max(total_inv - cogs - total_exp - total_pay, 0)
-    assets = {"📦 قيمة المخزون": inv_val, "👥 ذمم مدينة (عملاء)": receivables, "💵 النقدية/الخزينة (صافي)": net_cash}
-    total_assets = sum(assets.values())
-    liabilities = {"🏢 ديون الموردين (ذمم دائنة)": 0.0, "📜 التزامات أخرى": 0.0}
-    net_profit = total_inv - cogs - total_exp
-    equity = {"💰 رأس المال": 0.0, "📈 الأرباح المحتجزة (صافي الربح)": net_profit}
-    total_liab_equity = sum(liabilities.values()) + sum(equity.values())
-    is_balanced = abs(total_assets - total_liab_equity) < 1.0
-    return render_template('balance_sheet.html', assets=assets, total_assets=total_assets, liabilities=liabilities, equity=equity, total_liab_equity=total_liab_equity, is_balanced=is_balanced)
-
-# ===================== APIs التحليلات =====================
-@app.route('/api/analytics/kpis')
-@login_required
-def analytics_kpis():
-    branch_id = session.get('branch_id') or current_user.branch_id
-    today = datetime.now().date()
-    today_sales = db.session.query(db.func.sum(Invoice.total)).filter(Invoice.branch_id == branch_id, Invoice.status == 'completed', db.func.date(Invoice.created_at) == today).scalar() or 0
-    month_sales = db.session.query(db.func.sum(Invoice.total)).filter(Invoice.branch_id == branch_id, Invoice.status == 'completed', Invoice.created_at >= today.replace(day=1)).scalar() or 0
-    today_invoices = Invoice.query.filter(Invoice.branch_id == branch_id, Invoice.status == 'completed', db.func.date(Invoice.created_at) == today).count()
-    avg_invoice = month_sales / max(Invoice.query.filter(Invoice.branch_id == branch_id, Invoice.status == 'completed', Invoice.created_at >= today.replace(day=1)).count(), 1)
-    inventory_value = db.session.query(db.func.sum(BranchInventory.quantity * Book.cost_price)).join(Book).filter(BranchInventory.branch_id == branch_id).scalar() or 0
-    low_stock = BranchInventory.query.filter(BranchInventory.branch_id == branch_id, BranchInventory.quantity < 5, BranchInventory.quantity > 0).count()
-    new_customers = Customer.query.filter(Customer.created_at >= today.replace(day=1)).count() if hasattr(Customer, 'created_at') else 0
-    total_due = db.session.query(db.func.sum(Invoice.total)).filter(Invoice.branch_id == branch_id, Invoice.status == 'completed').scalar() or 0
-    total_paid = db.session.query(db.func.sum(Invoice.paid_amount)).filter(Invoice.branch_id == branch_id).scalar() or 0
-    collection_rate = (total_paid / total_due * 100) if total_due > 0 else 100
-    return jsonify({'today_sales': round(today_sales, 2), 'month_sales': round(month_sales, 2), 'today_invoices': today_invoices, 'avg_invoice': round(avg_invoice, 2), 'inventory_value': round(inventory_value, 2), 'low_stock_count': low_stock, 'new_customers': new_customers, 'collection_rate': round(collection_rate, 1)})
-
-@app.route('/api/analytics/sales-chart')
-@login_required
-def analytics_sales_chart():
-    branch_id = session.get('branch_id') or current_user.branch_id
-    period = request.args.get('period', 'week')
-    if period == 'day':
-        labels = [f"{h}:00" for h in range(24)]
-        data = []
-        for h in range(24):
-            start = datetime.now().replace(hour=h, minute=0, second=0)
-            end = start.replace(minute=59, second=59)
-            val = db.session.query(db.func.sum(Invoice.total)).filter(Invoice.branch_id == branch_id, Invoice.status == 'completed', Invoice.created_at >= start, Invoice.created_at <= end).scalar() or 0
-            data.append(round(val, 2))
-    elif period == 'week':
-        labels = []
-        data = []
-        for i in range(6, -1, -1):
-            day = datetime.now().date() - timedelta(days=i)
-            labels.append(day.strftime('%d/%m'))
-            val = db.session.query(db.func.sum(Invoice.total)).filter(Invoice.branch_id == branch_id, Invoice.status == 'completed', db.func.date(Invoice.created_at) == day).scalar() or 0
-            data.append(round(val, 2))
-    elif period == 'month':
-        labels = []
-        data = []
-        for i in range(29, -1, -1):
-            day = datetime.now().date() - timedelta(days=i)
-            labels.append(day.strftime('%d/%m'))
-            val = db.session.query(db.func.sum(Invoice.total)).filter(Invoice.branch_id == branch_id, Invoice.status == 'completed', db.func.date(Invoice.created_at) == day).scalar() or 0
-            data.append(round(val, 2))
-    else:
-        labels = []
-        data = []
-        for i in range(11, -1, -1):
-            month = datetime.now().month - i
-            year = datetime.now().year
-            if month <= 0: month += 12; year -= 1
-            labels.append(f"{month:02d}/{year}")
-            start = datetime(year, month, 1)
-            end = (start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-            val = db.session.query(db.func.sum(Invoice.total)).filter(Invoice.branch_id == branch_id, Invoice.status == 'completed', Invoice.created_at >= start, Invoice.created_at <= end).scalar() or 0
-            data.append(round(val, 2))
-    return jsonify({'labels': labels, 'data': data})
-
-@app.route('/api/analytics/top-books')
-@login_required
-def analytics_top_books():
-    branch_id = session.get('branch_id') or current_user.branch_id
-    period_days = int(request.args.get('days', 30))
-    start_date = datetime.now() - timedelta(days=period_days)
-    results = db.session.query(Book.title, db.func.sum(InvoiceItem.quantity).label('qty'), db.func.sum(InvoiceItem.total).label('revenue')).join(InvoiceItem, Book.id == InvoiceItem.book_id).join(Invoice).filter(Invoice.branch_id == branch_id, Invoice.status == 'completed', Invoice.created_at >= start_date).group_by(Book.id, Book.title).order_by(db.func.sum(InvoiceItem.total).desc()).limit(10).all()
-    return jsonify([{'title': r.title, 'quantity': r.qty, 'revenue': round(r.revenue, 2)} for r in results])
-
-@app.route('/api/analytics/branch-comparison')
-@login_required
-def analytics_branch_comparison():
-    if current_user.role != 'admin': return jsonify([])
-    branches = Branch.query.filter_by(is_active=True).all()
-    result = []
-    for branch in branches:
-        sales = db.session.query(db.func.sum(Invoice.total)).filter(Invoice.branch_id == branch.id, Invoice.status == 'completed', Invoice.created_at >= datetime.now() - timedelta(days=30)).scalar() or 0
-        invoices = Invoice.query.filter(Invoice.branch_id == branch.id, Invoice.status == 'completed', Invoice.created_at >= datetime.now() - timedelta(days=30)).count()
-        result.append({'name': branch.name, 'sales': round(sales, 2), 'invoices': invoices})
-    return jsonify(result)
-
-@app.route('/api/analytics/export')
-@login_required
-def analytics_export():
-    try:
-        branch_id = session.get('branch_id') or current_user.branch_id
-        period = request.args.get('period', 'month')
-        start_date = datetime.now() - timedelta(days=30 if period == 'month' else 7)
-        invoices = Invoice.query.filter(Invoice.branch_id == branch_id, Invoice.status == 'completed', Invoice.created_at >= start_date).all()
-        data = []
-        for inv in invoices:
-            data.append({'رقم الفاتورة': inv.invoice_number, 'التاريخ': inv.created_at.strftime('%Y-%m-%d %H:%M'), 'العميل': inv.customer_obj.name if inv.customer_obj else 'عام', 'المجموع': inv.subtotal, 'الخصم': inv.discount, 'الضريبة': inv.tax, 'الإجمالي': inv.total, 'طريقة الدفع': {'cash':'نقدي','card':'بطاقة','transfer':'تحويل','credit':'آجل'}.get(inv.payment_method, inv.payment_method)})
-        df = pd.DataFrame(data)
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='المبيعات')
-        output.seek(0)
-        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=f'Analytics_Report_{datetime.now().strftime("%Y%m%d")}.xlsx')
-    except Exception as e:
-        flash(f'خطأ في التصدير: {e}', 'danger')
-        return redirect(url_for('dashboard'))
 
 # ===================== المحاسبة والمصروفات =====================
 @app.route('/accounts')
@@ -1489,8 +1106,6 @@ def analytics_export():
 @admin_required
 def accounts():
     accounts = Account.query.filter_by(is_active=True).order_by(Account.code).all()
-    
-    # تحويل البيانات لقائمة قواميس لسهولة المعالجة في الجافاسكريبت
     accounts_data = [{
         'id': acc.id,
         'code': acc.code,
@@ -1498,11 +1113,8 @@ def accounts():
         'account_type': acc.account_type,
         'parent_id': acc.parent_id
     } for acc in accounts]
-    
     return render_template('accounts.html', accounts_data=accounts_data)
-    all_acc = Account.query.filter_by(is_active=True).order_by(Account.code).all()
-    return render_template('accounts.html', all_accounts=all_acc)
- # ===================== المحاسبة والمصروفات =====================   
+
 @app.route('/accounts/add', methods=['POST'])
 @login_required
 @admin_required
@@ -1516,6 +1128,7 @@ def add_account():
     db.session.add(Account(code=code, name=name, account_type=acc_type, parent_id=parent))
     db.session.commit(); flash('تم إضافة الحساب بنجاح', 'success')
     return redirect(url_for('accounts'))
+
 @app.route('/accounts/<int:id>/toggle', methods=['POST'])
 @login_required
 @admin_required
@@ -1523,6 +1136,7 @@ def toggle_account(id):
     acc = db.session.get(Account, id)
     if acc: acc.is_active = not acc.is_active; db.session.commit(); flash('تم تحديث الحالة', 'success')
     return redirect(url_for('accounts'))
+
 @app.route('/expenses')
 @login_required
 @manager_required
@@ -1537,6 +1151,7 @@ def expenses():
     by_branch = {}
     for e in exp_list: by_branch[e.branch.name] = by_branch.get(e.branch.name, 0) + e.amount
     return render_template('expenses.html', expenses=exp_list, total=total, by_branch=by_branch, start=start, end=end, accounts=Account.query.filter_by(account_type='expense', is_active=True).all(), branches=Branch.query.filter_by(is_active=True).all())
+
 @app.route('/expenses/add', methods=['POST'])
 @login_required
 @manager_required
@@ -1552,6 +1167,7 @@ def add_expense():
         db.session.commit(); flash('تم تسجيل المصروف بنجاح', 'success')
     except Exception as e: db.session.rollback(); flash(f'خطأ: {e}', 'danger')
     return redirect(url_for('expenses'))
+
 @app.route('/expenses/<int:id>/delete', methods=['POST'])
 @login_required
 @admin_required
@@ -1565,12 +1181,14 @@ def delete_expense(id):
 @login_required
 @manager_required
 def suppliers(): return render_template('suppliers.html', suppliers=Publisher.query.all())
+
 @app.route('/purchase-invoices')
 @login_required
 @manager_required
 def purchase_invoices():
     invoices = PurchaseInvoice.query.order_by(PurchaseInvoice.invoice_date.desc()).limit(50).all()
     return render_template('purchase_invoices.html', invoices=invoices)
+
 @app.route('/purchase-invoices/<int:id>/pay', methods=['POST'])
 @login_required
 @manager_required
@@ -1583,6 +1201,7 @@ def pay_purchase_invoice(id):
             inv.status = 'paid' if inv.paid_amount >= inv.total_amount else 'partial'
             db.session.commit(); flash('تم تسجيل الدفعة بنجاح', 'success')
     return redirect(url_for('purchase_invoices'))
+
 @app.route('/api/parse-purchase-excel', methods=['POST'])
 @login_required
 def parse_purchase_excel():
@@ -1613,6 +1232,7 @@ def parse_purchase_excel():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'خطأ: {str(e)}'}), 500
+
 @app.route('/purchase-invoices/add', methods=['GET', 'POST'])
 @login_required
 @manager_required
@@ -1657,6 +1277,7 @@ def add_purchase_invoice():
 @login_required
 @manager_required
 def transfer_stock(): return render_template('transfer_stock.html', branches=Branch.query.filter_by(is_active=True).all(), books=Book.query.filter_by(is_active=True).all())
+
 @app.route('/transfer-stock/create', methods=['POST'])
 @login_required
 @manager_required
@@ -1675,9 +1296,11 @@ def create_transfer():
         db.session.commit(); flash(f'✅ تم إنشاء طلب التحويل {transfer_num} بنجاح ({len(items_list)} كتاب)', 'success')
         return redirect(url_for('transfer_history'))
     except Exception as e: db.session.rollback(); flash(f'❌ خطأ أثناء الحفظ: {str(e)}', 'danger'); return redirect(url_for('transfer_stock'))
+
 @app.route('/transfer-history')
 @login_required
 def transfer_history(): return render_template('transfer_history.html', transfers=StockTransfer.query.order_by(StockTransfer.created_at.desc()).limit(50).all())
+
 @app.route('/transfer/<int:id>/approve', methods=['POST'])
 @login_required
 @manager_required
@@ -1685,6 +1308,7 @@ def approve_transfer(id):
     transfer = db.session.get(StockTransfer, id)
     if transfer and transfer.status == 'pending': transfer.status = 'approved'; transfer.approved_by = current_user.id; transfer.shipped_at = datetime.now(); db.session.commit(); flash('تم اعتماد التحويل', 'success')
     return redirect(url_for('transfer_history'))
+
 @app.route('/transfer/<int:id>/ship', methods=['POST'])
 @login_required
 @manager_required
@@ -1699,6 +1323,7 @@ def ship_transfer(id):
                 db.session.add(StockMovement(branch_id=transfer.from_branch_id, book_id=item.book_id, quantity=-item.quantity, movement_type='transfer', reference=transfer.transfer_number, created_by=current_user.id))
         db.session.commit(); flash('تم شحن التحويل', 'success')
     return redirect(url_for('transfer_history'))
+
 @app.route('/transfer/<int:id>/receive', methods=['POST'])
 @login_required
 def receive_transfer(id):
@@ -1750,6 +1375,7 @@ def branch_transfer_alerts():
 @login_required
 @admin_required
 def manage_currencies(): return render_template('currencies.html', branches=Branch.query.all())
+
 @app.route('/branch/<int:id>/update-currency', methods=['POST'])
 @login_required
 @admin_required
@@ -1757,32 +1383,7 @@ def update_branch_currency(id):
     branch = db.session.get(Branch, id)
     if branch: branch.currency = request.form.get('currency'); branch.exchange_rate = request.form.get('exchange_rate', type=float, default=1.0); db.session.commit(); flash('تم تحديث العملة', 'success')
     return redirect(url_for('manage_currencies'))
-@app.route('/invoices/<int:id>/delete', methods=['POST'])
-@login_required
-@admin_required
-def delete_invoice(id):
-    invoice = db.session.get(Invoice, id)
-    if not invoice:
-        flash('❌ الفاتورة غير موجودة', 'danger')
-        return redirect(url_for('invoices'))
 
-    # 1. استرجاع الكمية للمخزون
-    items = InvoiceItem.query.filter_by(invoice_id=id).all()
-    for item in items:
-        stock = BranchInventory.query.filter_by(branch_id=invoice.branch_id, book_id=item.book_id).first()
-        if stock:
-            stock.quantity += item.quantity
-
-    # 2. حذف العناصر المرتبطة وحركات المخزون
-    InvoiceItem.query.filter_by(invoice_id=id).delete()
-    StockMovement.query.filter_by(reference=invoice.invoice_number).delete()
-
-    # 3. حذف الفاتورة نفسها
-    db.session.delete(invoice)
-    db.session.commit()
-
-    flash('✅ تم حذف الفاتورة نهائياً واسترجاع المخزون', 'success')
-    return redirect(url_for('invoices'))
 if __name__ == '__main__':
     init_db()
     print("🚀 يعمل على http://0.0.0.0:5000")
