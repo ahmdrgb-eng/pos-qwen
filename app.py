@@ -16,11 +16,41 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-@app.route('/')
-@login_required  # إذا أردت حماية الصفحة الرئيسية
-def index():
-    return redirect(url_for('dashboard'))  # أو render_template('index.html')
+# ... (بعد تعريف app = Flask(__name__) وقواعد قاعدة البيانات) ...
 
+@app.route('/')
+def index():
+    # توجيه الزائر مباشرة لصفحة تسجيل الدخول إذا لم يكن مسجلاً
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        # مثال بسيط للتحقق (استبدله بنظام التحقق الخاص بك من قاعدة البيانات)
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password, password):
+            login_user(user)
+            flash('✅ تم تسجيل الدخول بنجاح', 'success')
+            return redirect(url_for('dashboard'))
+        else:
+            flash('❌ اسم المستخدم أو كلمة المرور غير صحيحة', 'danger')
+            
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('تم تسجيل الخروج', 'info')
+    return redirect(url_for('login'))
+
+# ... (بقية الكود الخاص بك) ...
 # إعدادات البريد الإلكتروني
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
