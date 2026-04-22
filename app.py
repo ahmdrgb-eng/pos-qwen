@@ -16,6 +16,11 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
+@app.route('/')
+@login_required  # إذا أردت حماية الصفحة الرئيسية
+def index():
+    return redirect(url_for('dashboard'))  # أو render_template('index.html')
+
 # إعدادات البريد الإلكتروني
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
