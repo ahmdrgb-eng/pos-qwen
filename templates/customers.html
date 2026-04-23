@@ -26,10 +26,15 @@
                     <tr>
                         <td>{{ item.customer.id }}</td>
                         <td>
-                            <a href="{{ url_for('customer_invoices', id=item.customer.id) }}" class="text-decoration-none fw-bold text-primary">
-                                <i class="fas fa-file-invoice me-1"></i> {{ item.customer.name }}
-                            </a>
-                        </td>
+    <div class="btn-group btn-group-sm" role="group">
+        <a href="{{ url_for('customer_returns', customer_id=item.customer.id) }}" class="btn btn-outline-info" title="المرتجعات">
+            <i class="fas fa-undo"></i>
+        </a>
+        <a href="{{ url_for('customer_statement', id=item.customer.id) }}" class="btn btn-outline-secondary" title="كشف حساب">
+            <i class="fas fa-receipt"></i>
+        </a>
+    </div>
+</td>
                         <td>{{ item.customer.phone or '-' }}</td>
                         <td class="text-center"><span class="badge bg-info text-dark">{{ item.inv_count }} فاتورة</span></td>
                         <td>

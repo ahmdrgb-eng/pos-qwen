@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}إنشاء مرتجع - {{ customer.name }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0">📦 إنشاء مرتجع جديد لـ {{ customer.name }}</h5>
+    </div>
+    <div class="card-body">
+        <form method="POST">
+            <!-- اختيار الفاتورة الأصلية -->
+            <div class="mb-4">
+                <label class="form-label fw-bold">اختر الفاتورة الأصلية</label>
+                <select name="invoice_id" class="form-select" required onchange="loadInvoiceItems(this.value)">
+                    <option value="">-- اختر فاتورة --</option>
+                    {% for inv in invoices %}
+                    <option value="{{ inv.id }}">{{ inv.invoice_number }} - {{ inv.created_at.strftime('%Y-%m-%d') }} - {{ inv.total }} {{ inv.currency }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- جدول عناصر الفاتورة -->
+            <div id="invoiceItemsSection" style="display:none;">
+                <table class="table table-bordered">
+                    <thead>
+                        <tr>
+                            <th>اختر</th>
+                            <th>الكتاب</th>
+                            <th>الكمية المشتراة</th>
+                            <th>كمية المرتجع</th>
+                            <th>سعر الوحدة</th>
+                            <th>الإجمالي</th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsBody"></tbody>
+                </table>
+            </div>
+
+            <!-- معلومات إضافية -->
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <label class="form-label">سبب المرتجع</label>
+                    <select name="general_reason" class="form-select">
+                        <option value="">اختر السبب</option>
+                        <option value="تالف">تالف</option>
+                        <option value="خطأ في الطلب">خطأ في الطلب</option>
+                        <option value="استرجاع طوعي">استرجاع طوعي</option>
+                        <option value="أخرى">أخرى</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">ملاحظات</label>
+                    <textarea name="notes" class="form-control" rows="2"></textarea>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> حفظ المرتجع</button>
+                <a href="{{ url_for('customer_returns', customer_id=customer.id) }}" class="btn btn-secondary">إلغاء</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function loadInvoiceItems(invoiceId) {
+    if (!invoiceId) {
+        document.getElementById('invoiceItemsSection').style.display = 'none';
+        return;
+    }
+    
+    fetch(`/api/invoice_items/${invoiceId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.items || data.items.length === 0) {
+                alert('لا توجد عناصر في هذه الفاتورة');
+                return;
+            }
+            
+            let html = '';
+            data.items.forEach((item, i) => {
+                html += `
+                    <tr>
+                        <td><input type="checkbox" name="book_id[]" value="${item.book_id}" onchange="toggleQty(this, ${i})"></td>
+                        <td>${item.book_title} <br><small class="text-muted">ISBN: ${item.isbn || 'N/A'}</small></td>
+                        <td>${item.quantity}</td>
+                        <td><input type="number" name="quantity[]" class="form-control form-control-sm" min="1" max="${item.quantity}" value="1" disabled id="qty_${i}"></td>
+                        <td>${item.unit_price.toFixed(2)}</td>
+                        <td class="line-total">${(item.unit_price * 1).toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+            
+            document.getElementById('itemsBody').innerHTML = html;
+            document.getElementById('invoiceItemsSection').style.display = 'block';
+        });
+}
+
+function toggleQty(checkbox, index) {
+    const qtyInput = document.getElementById(`qty_${index}`);
+    qtyInput.disabled = !checkbox.checked;
+    if (!checkbox.checked) qtyInput.value = 1;
+}
+
+// حساب الإجماليات ديناميكياً (يمكن إضافته لاحقاً)
+</script>
+{% endblock %}

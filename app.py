@@ -5,7 +5,7 @@ import pandas as pd
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, send_file
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_mail import Mail, Message
-from database import db, User, Branch, Author, Publisher, Category, Book, BranchInventory, Customer, Invoice, InvoiceItem, StockMovement, AppSettings, PublisherTransaction, CustomerPayment, StockTransfer, TransferItem, Account, Expense, PurchaseInvoice, PurchaseInvoiceItem
+from database import db, CustomerReturn, ReturnItem,User, Branch, Author, Publisher, Category, Book, BranchInventory, Customer, Invoice, InvoiceItem, StockMovement, AppSettings, PublisherTransaction, CustomerPayment, StockTransfer, TransferItem, Account, Expense, PurchaseInvoice, PurchaseInvoiceItem
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash
 
@@ -419,9 +419,55 @@ def add_customer():
     db.session.add(Customer(name=request.form['name'], phone=request.form.get('phone',''), email=request.form.get('email',''), address=request.form.get('address',''), national_id=request.form.get('national_id','')))
     db.session.commit(); flash('تم إضافة العميل', 'success'); return redirect(url_for('customers'))
 
-@app.route('/customers/<int:id>/statement')
+@app.route('/customers/<int:customer_id>/statement')
 @login_required
-def customer_statement(id):
+def customer_statement(customer_id):
+    customer = db.session.get(Customer, customer_id)
+    if not customer:
+        flash('❌ العميل غير موجود', 'danger')
+        return redirect(url_for('customers'))
+    
+    # جلب الفواتير (موجبة)
+    invoices = Invoice.query.filter_by(customer_id=customer_id, status='completed')\
+        .order_by(Invoice.created_at).all()
+    
+    # جلب المرتجعات (سالبة)
+    returns = CustomerReturn.query.filter_by(customer_id=customer_id)\
+        .order_by(CustomerReturn.created_at).all()
+    
+    # دمج وترتيب البيانات زمنياً
+    transactions = []
+    for inv in invoices:
+        transactions.append({
+            'date': inv.created_at,
+            'type': 'invoice',
+            'reference': inv.invoice_number,
+            'description': f'فاتورة بيع',
+            'amount': inv.total,  # موجب
+            'balance': 0  # سيُحسب لاحقاً
+        })
+    
+    for ret in returns:
+        transactions.append({
+            'date': ret.created_at,
+            'type': 'return',
+            'reference': ret.return_number,
+            'description': f'مرتجع كتب - {ret.reason or "بدون سبب"}',
+            'amount': -ret.total,  # سالب (خصم)
+            'balance': 0
+        })
+    
+    # ترتيب حسب التاريخ وحساب الرصيد التراكمي
+    transactions.sort(key=lambda x: x['date'])
+    balance = 0
+    for t in transactions:
+        balance += t['amount']
+        t['balance'] = balance
+    
+    return render_template('customer_statement.html', 
+                         customer=customer, 
+                         transactions=transactions,
+                         final_balance=balance)
     c = db.session.get(Customer, id)
     if not c: flash('غير موجود', 'danger'); return redirect(url_for('customers'))
     invs = Invoice.query.filter_by(customer_id=id).order_by(Invoice.created_at).all()
@@ -2356,7 +2402,107 @@ def update_branch_currency(id):
     branch = db.session.get(Branch, id)
     if branch: branch.currency = request.form.get('currency'); branch.exchange_rate = request.form.get('exchange_rate', type=float, default=1.0); db.session.commit(); flash('تم تحديث العملة', 'success')
     return redirect(url_for('manage_currencies'))
+# ==========================================
+# ✅ مسارات نظام مرتجعات العملاء
+# ==========================================
 
+@app.route('/customers/<int:customer_id>/returns')
+@login_required
+def customer_returns(customer_id):
+    customer = db.session.get(Customer, customer_id)
+    if not customer:
+        flash('❌ العميل غير موجود', 'danger')
+        return redirect(url_for('customers'))
+    
+    returns = CustomerReturn.query.filter_by(customer_id=customer_id)\
+        .order_by(CustomerReturn.created_at.desc()).all()
+    
+    return render_template('customer_returns.html', customer=customer, returns=returns)
+
+@app.route('/customers/<int:customer_id>/returns/create', methods=['GET', 'POST'])
+@login_required
+def create_return(customer_id):
+    customer = db.session.get(Customer, customer_id)
+    if not customer:
+        flash('❌ العميل غير موجود', 'danger')
+        return redirect(url_for('customers'))
+    
+    if request.method == 'POST':
+        invoice_id = request.form.get('invoice_id')
+        book_ids = request.form.getlist('book_id[]')
+        quantities = request.form.getlist('quantity[]')
+        
+        invoice = db.session.get(Invoice, invoice_id)
+        if not invoice:
+            flash('❌ الفاتورة غير موجودة', 'danger')
+            return redirect(request.url)
+        
+        return_num = f"RET-{datetime.now().strftime('%Y%m%d')}-{random.randint(1000,9999)}"
+        subtotal = 0.0
+        return_items = []
+        
+        for i, book_id in enumerate(book_ids):
+            qty = int(quantities[i]) if quantities[i] else 0
+            if qty <= 0: continue
+            
+            inv_item = InvoiceItem.query.filter_by(invoice_id=invoice_id, book_id=book_id).first()
+            if not inv_item: continue
+            
+            unit_price = inv_item.unit_price
+            item_disc = inv_item.discount / inv_item.quantity if inv_item.quantity > 0 else 0
+            line_total = (unit_price * qty) - (item_disc * qty)
+            subtotal += (unit_price * qty)
+            
+            return_items.append({
+                'book_id': book_id, 'invoice_item_id': inv_item.id,
+                'quantity': qty, 'unit_price': unit_price,
+                'discount': item_disc * qty, 'total': line_total
+            })
+        
+        if not return_items:
+            flash('⚠️ لم يتم اختيار عناصر', 'warning')
+            return redirect(request.url)
+        
+        settings = AppSettings.query.first()
+        tax_rate = float(settings.tax_rate or 5) / 100 if settings else 0.05
+        after_disc = subtotal - sum(it['discount'] for it in return_items)
+        tax = round(after_disc * tax_rate, 2)
+        total = round(after_disc + tax, 2)
+        
+        new_return = CustomerReturn(
+            return_number=return_num, invoice_id=invoice_id, customer_id=customer_id,
+            branch_id=invoice.branch_id, subtotal=subtotal, discount=sum(it['discount'] for it in return_items),
+            tax=tax, total=total, reason=request.form.get('general_reason', ''),
+            notes=request.form.get('notes', ''), created_by=current_user.id
+        )
+        db.session.add(new_return)
+        db.session.flush()
+        
+        for it in return_items:
+            db.session.add(ReturnItem(
+                return_id=new_return.id, book_id=it['book_id'], invoice_item_id=it['invoice_item_id'],
+                quantity=it['quantity'], unit_price=it['unit_price'], discount=it['discount'], total=it['total']
+            ))
+            stock = BranchInventory.query.filter_by(branch_id=invoice.branch_id, book_id=it['book_id']).first()
+            if stock:
+                stock.quantity += it['quantity']
+                stock.last_updated = datetime.utcnow()
+        
+        db.session.commit()
+        flash(f'✅ تم تسجيل المرتجع {return_num} بنجاح', 'success')
+        return redirect(url_for('customer_returns', customer_id=customer_id))
+    
+    invoices = Invoice.query.filter_by(customer_id=customer_id, status='completed').order_by(Invoice.created_at.desc()).limit(20).all()
+    return render_template('create_return.html', customer=customer, invoices=invoices)
+
+@app.route('/returns/<int:return_id>')
+@login_required
+def return_detail(return_id):
+    ret = db.session.get(CustomerReturn, return_id)
+    if not ret:
+        flash('❌ المرتجع غير موجود', 'danger')
+        return redirect(url_for('customers'))
+    return render_template('return_detail.html', ret=ret)
 if __name__ == '__main__':
     init_db()
     print("🚀 يعمل على http://0.0.0.0:5000")
