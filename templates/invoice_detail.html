@@ -40,7 +40,6 @@
     .col-num { width: 40px; text-align: center; }
     .col-qty { width: 60px; text-align: center; }
     .col-price { width: 100px; text-align: right; }
-    .col-disc { width: 80px; text-align: center; }
     .col-total { width: 100px; text-align: right; font-weight: bold; }
     
     .item-name-cell { text-align: left; direction: rtl; font-weight: 600; }
@@ -130,15 +129,11 @@
                 <th>Item Description</th>
                 <th class="col-qty">Qty</th>
                 <th class="col-price">Unit Price</th>
-                <th class="col-price">Price</th>
-                <th class="col-disc">Discount</th>
-                <th class="col-total">Total</th>
+                <th class="col-total">Line Total</th>
             </tr>
         </thead>
         <tbody>
             {% for inv_item, book in items_data %}
-            {% set line_price = inv_item.unit_price * inv_item.quantity %}
-            {% set line_total = line_price * (1 - (invoice.discount / 100)) %}
             <tr>
                 <td class="col-num">{{ loop.index }}</td>
                 <td class="item-name-cell">
@@ -149,9 +144,7 @@
                 </td>
                 <td class="col-qty">{{ inv_item.quantity }}</td>
                 <td class="col-price">{{ "%.2f"|format(inv_item.unit_price) }}</td>
-                <td class="col-price">{{ "%.2f"|format(line_price) }}</td>
-                <td class="col-disc">{{ invoice.discount }}%</td>
-                <td class="col-total">{{ "%.2f"|format(line_total) }}</td>
+                <td class="col-total">{{ "%.2f"|format(inv_item.total) }}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -167,22 +160,29 @@
             
             {% if invoice.discount > 0 %}
             <tr class="discount-row">
-                <td class="label">Discount ({{ invoice.discount }}%)</td>
-                <td class="value">- {{ "%.2f"|format(invoice.subtotal * invoice.discount / 100) }}</td>
+                <td class="label">Discount</td>
+                <td class="value">- {{ "%.2f"|format(invoice.discount) }}</td>
             </tr>
             {% endif %}
 
-            {% if delivery_fee and delivery_fee > 0 %}
+            {% if delivery_fee is defined and delivery_fee > 0 %}
             <tr class="delivery-fee">
                 <td class="label">Delivery Fee</td>
                 <td class="value">+ {{ "%.2f"|format(delivery_fee) }}</td>
             </tr>
             {% endif %}
 
+            {% if invoice.tax > 0 %}
             <tr>
-                <td class="label">VAT 5%</td>
+                <td class="label">VAT (5%)</td>
                 <td class="value">{{ "%.2f"|format(invoice.tax) }}</td>
             </tr>
+            {% else %}
+            <tr>
+                <td class="label">VAT</td>
+                <td class="value" style="color:#888;">Not Applicable</td>
+            </tr>
+            {% endif %}
 
             <tr class="grand-total">
                 <td class="label">Total</td>
@@ -191,10 +191,9 @@
         </table>
     </div>
 
-    <!-- Amount in Words -->
+    <!-- Amount in Words (Auto-filled by JS) -->
     <div class="amount-words">
-        <strong>Total amount in words:</strong> 
-        {{ "%.2f"|format(invoice.total) }} (Please implement number-to-words logic if required)
+        <strong>Total amount in words:</strong> <span id="amountInWords">Loading...</span>
     </div>
 
     <!-- Footer -->
@@ -210,4 +209,43 @@
         <div class="prepared-by">Prepared By: Accounting Department</div>
     </div>
 </div>
+
+<!-- ✅ دالة تحويل المبلغ إلى كلمات إنجليزية -->
+<script>
+(function() {
+    function numberToWords(num) {
+        if (num === 0) return 'Zero';
+        const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+        const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+        const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+        
+        let words = '';
+        let integerPart = Math.floor(num);
+        let decimalPart = Math.round((num - integerPart) * 100);
+        
+        function convertHundreds(n) {
+            let w = '';
+            if (n >= 100) { w += ones[Math.floor(n / 100)] + ' Hundred '; n %= 100; }
+            if (n >= 20) { w += tens[Math.floor(n / 10)] + ' '; n %= 10; }
+            else if (n >= 10) { w += teens[n - 10] + ' '; n = 0; }
+            if (n > 0) { w += ones[n] + ' '; }
+            return w;
+        }
+        
+        if (integerPart >= 1000000) { words += convertHundreds(Math.floor(integerPart / 1000000)) + ' Million '; integerPart %= 1000000; }
+        if (integerPart >= 1000) { words += convertHundreds(Math.floor(integerPart / 1000)) + ' Thousand '; integerPart %= 1000; }
+        if (integerPart > 0) { words += convertHundreds(integerPart); }
+        
+        let finalWords = words.trim();
+        if (decimalPart > 0) { finalWords += ' and ' + decimalPart + '/100'; }
+        return finalWords;
+    }
+
+    // جلب القيم من Jinja بأمان
+    const totalAmount = {{ invoice.total | default(0) }};
+    const currency = '{{ invoice.currency | default("AED") }}' === 'د.إ' ? 'AED' : '{{ invoice.currency | default("AED") }}';
+    
+    document.getElementById('amountInWords').textContent = numberToWords(totalAmount) + ' ' + currency + ' Only';
+})();
+</script>
 {% endblock %}
