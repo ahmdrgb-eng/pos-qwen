@@ -141,19 +141,31 @@
                 <div id="emptyCart" class="text-center py-3"><i class="fas fa-shopping-basket fa-2x text-muted mb-2 opacity-25"></i><p class="text-muted mb-0 small">السلة فارغة</p></div>
                 <div id="cartItems" style="display:none; max-height: 200px; overflow-y: auto;"></div>
 
-                <div class="mt-auto pt-2 border-top">
-                    <div class="d-flex justify-content-between small mb-1"><span>المجموع:</span><span id="subTotal">0.00</span></div>
-                    <div class="d-flex justify-content-between small mb-1 text-danger"><span>الخصم الكلي:</span><span id="totalDiscount">0.00</span></div>
-                    <div class="d-flex justify-content-between small mb-1 text-success"><span>الضريبة (5%):</span><span id="tax">0.00</span></div>
-                    <div class="d-flex justify-content-between small mb-2 text-info"><span>التوصيل:</span><span id="delivery">0.00</span></div>
-                    <hr class="my-1">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="h5 fw-bold">الإجمالي:</span>
-                        <span class="h4 fw-bold text-primary" id="grandTotal">0.00</span>
-                    </div>
-                    <button class="btn btn-success w-100 mb-2 btn-lg" onclick="checkout()"><i class="fas fa-check-circle"></i> إتمام البيع وطباعة</button>
-                    <button class="btn btn-outline-danger w-100" onclick="clearCart()"><i class="fas fa-trash"></i> تفريغ السلة</button>
-                </div>
+              <div class="mt-auto pt-2 border-top">
+    <div class="d-flex justify-content-between small mb-1"><span>المجموع:</span><span id="subTotal">0.00</span></div>
+    <div class="d-flex justify-content-between small mb-1 text-danger"><span>الخصم الكلي:</span><span id="totalDiscount">0.00</span></div>
+    
+    <!-- ✅ خيار تفعيل/تعطيل الضريبة -->
+    <div class="d-flex justify-content-between align-items-center small mb-1 text-success">
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="applyTax" checked onchange="calcTotal()">
+            <label class="form-check-label small" for="applyTax">تطبيق الضريبة ({{ settings.tax_rate or 5 }}%)</label>
+        </div>
+        <span id="tax">0.00</span>
+    </div>
+    
+    <div class="d-flex justify-content-between small mb-2 text-info"><span>التوصيل:</span><span id="delivery">0.00</span></div>
+    <hr class="my-1">
+    <div class="d-flex justify-content-between mb-2">
+        <span class="h5 fw-bold">الإجمالي:</span>
+        <span class="h4 fw-bold text-primary" id="grandTotal">0.00</span>
+    </div>
+    <!-- حقول مخفية لإرسال بيانات الضريبة للسيرفر -->
+<input type="hidden" id="taxAmountHidden" name="tax_amount" value="0">
+<input type="hidden" id="applyTaxHidden" name="apply_tax" value="1">
+    <button class="btn btn-success w-100 mb-2 btn-lg" onclick="checkout()"><i class="fas fa-check-circle"></i> إتمام البيع وطباعة</button>
+    <button class="btn btn-outline-danger w-100" onclick="clearCart()"><i class="fas fa-trash"></i> تفريغ السلة</button>
+</div>
             </div>
         </div>
     </div>
@@ -331,22 +343,40 @@ window.removeItem = function(i) { cart.splice(i,1); saveCart(); renderCart(); };
 window.clearCart = function() { if(confirm('تفريغ السلة؟')){cart=[];saveCart();renderCart();} };
 
 function calcTotal() {
+    // حساب المجموع الفرعي
     const sub = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    
+    // جلب قيم الخصم والتوصيل
     const discPct = parseFloat(document.getElementById('discountPct').value) || 0;
     const cashDisc = parseFloat(document.getElementById('cashDiscount').value) || 0;
     const delivery = parseFloat(document.getElementById('deliveryFee').value) || 0;
-
+    
+    // ✅ جلب حالة الضريبة ومعدلها
+    const applyTax = document.getElementById('applyTax').checked;
+    const taxRate = parseFloat('{{ settings.tax_rate or 5 }}') / 100;
+    
+    // حساب الخصم
     const discAmount = sub * (discPct / 100);
-    const taxable = Math.max(0, sub - discAmount - cashDisc);
-    const tax = taxable * 0.05;
-    const grand = taxable + tax + delivery;
+    const afterDiscount = Math.max(0, sub - discAmount - cashDisc);
+    
+    // حساب الضريبة (فقط إذا مفعلة)
+    const tax = applyTax ? (afterDiscount * taxRate) : 0;
+    
+    // الإجمالي النهائي
+    const grand = afterDiscount + tax + delivery;
 
+    // تحديث العرض
     document.getElementById('subTotal').textContent = sub.toFixed(2);
     document.getElementById('totalDiscount').textContent = (discAmount + cashDisc).toFixed(2);
     document.getElementById('tax').textContent = tax.toFixed(2);
     document.getElementById('delivery').textContent = delivery.toFixed(2);
     document.getElementById('grandTotal').textContent = grand.toFixed(2);
+    
+    // ✅ تحديث حقول مخفية للإرسال للسيرفر
+    document.getElementById('taxAmountHidden').value = tax.toFixed(2);
+    document.getElementById('applyTaxHidden').value = applyTax ? '1' : '0';
 }
+    
 
 window.toggleExportButtons = function() {
     document.getElementById('exportButtons').classList.toggle('d-none', document.getElementById('saveInvoiceCheck').checked);
@@ -488,11 +518,29 @@ window.checkout = function() {
     fetch('/api/create_invoice',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-            items:cart.map(i=>({book_id:i.id,quantity:i.qty,unit_price:i.price,discount:0,total:i.price*i.qty})),
-            subtotal:sub, discount_pct:discPct, cash_discount:cashDisc, delivery_fee:delivery,
-            tax:tax, total:grand, customer_id:cid||null, payment_method:currentInvoiceType, save_to_db:saveDb
-        })
+       body: JSON.stringify({
+    items: cart.map(i => ({
+        book_id: i.id, 
+        quantity: i.qty, 
+        unit_price: i.price, 
+        discount: 0, 
+        total: i.price * i.qty
+    })),
+    subtotal: sub, 
+    discount_pct: discPct, 
+    cash_discount: cashDisc, 
+    delivery_fee: delivery,
+    
+    // ✅ إرسال حالة الضريبة وقيمتها
+    apply_tax: document.getElementById('applyTax').checked ? 1 : 0,
+    tax_rate: parseFloat('{{ settings.tax_rate or 5 }}'),
+    tax_amount: parseFloat(document.getElementById('tax').textContent),
+    
+    total: grand, 
+    customer_id: cid || null, 
+    payment_method: currentInvoiceType, 
+    save_to_db: saveDb
+})
     })
     .then(r=>r.json()).then(d=>{
         if(d.success){
