@@ -1029,6 +1029,7 @@ def settings():
 @login_required
 @manager_required
 def income_statement():
+
     branch_id = session.get('branch_id') or current_user.branch_id
     today = datetime.now().date()
     start_str = request.args.get('start_date', (today - timedelta(days=30)).strftime('%Y-%m-%d'))
@@ -1094,6 +1095,70 @@ def income_statement():
                          exp_details=exp_details, 
                          start_date=start_str, 
                          end_date=end_str)
+@app.route('/reports/balance-sheet')
+@login_required
+@manager_required
+def balance_sheet():
+    branch_id = session.get('branch_id') or current_user.branch_id
+    
+    # 1. حساب قيمة المخزون الحالية
+    inv_val_query = db.session.query(db.func.sum(BranchInventory.quantity * Book.cost_price))\
+        .join(Book, BranchInventory.book_id == Book.id)\
+        .filter(BranchInventory.branch_id == branch_id)
+    
+    if current_user.role != 'admin':
+        inv_val_query = inv_val_query.filter(BranchInventory.branch_id == branch_id)
+        
+    inv_val = inv_val_query.scalar() or 0.0
+
+    # 2. الذمم المدينة (العملاء الذين لم يدفعوا كامل الفواتير الآجلة)
+    # ملاحظة: هذا تبسيط، يمكن تطويره ليكون أدق بناءً على مدفوعات العملاء
+    credit_invoices_total = db.session.query(db.func.sum(Invoice.total))\
+        .filter(Invoice.branch_id == branch_id, Invoice.payment_method == 'credit', Invoice.status == 'completed').scalar() or 0.0
+        
+    # 3. النقدية (صافي المبيعات النقدية - المصروفات)
+    cash_sales = db.session.query(db.func.sum(Invoice.total))\
+        .filter(Invoice.branch_id == branch_id, Invoice.payment_method.in_(['cash', 'card']), Invoice.status == 'completed').scalar() or 0.0
+        
+    total_expenses = db.session.query(db.func.sum(Expense.amount))\
+        .filter(Expense.branch_id == branch_id).scalar() or 0.0
+        
+    net_cash = max(cash_sales - total_expenses, 0)
+
+    # الأصول
+    assets = {
+        "📦 قيمة المخزون": round(inv_val, 2),
+        "💵 النقدية/الخزينة (تقريبي)": round(net_cash, 2),
+        "👥 ذمم مدينة (آجل)": round(credit_invoices_total, 2)
+    }
+    total_assets = sum(assets.values())
+
+    # الالتزامات وحقوق الملكية (تبسيطية للنظام الحالي)
+    # في نظام متكامل، نحتاج لجداول منفصلة للالتزامات ورأس المال
+    liabilities = {
+        "🏢 ديون الموردين": 0.0, # يحتاج لجدول فواتير شراء غير مدفوعة
+        "📜 التزامات أخرى": 0.0
+    }
+    
+    # صافي الربح المحتجز (كمثال لحقوق الملكية)
+    net_profit_query = db.session.query(db.func.sum(Invoice.total - Expense.amount))\
+        .filter(Invoice.branch_id == branch_id, Invoice.status == 'completed')
+    # هذه معادلة تقريبية جداً، الأفضل ربطها بجدول الأرباح والخسائر الفعلي
+    net_profit = 0.0 
+    
+    equity = {
+        "💰 رأس المال": 0.0, # يجب إدخاله يدوياً أو من إعدادات
+        "📈 الأرباح المحتجزة": round(net_profit, 2)
+    }
+    
+    total_liab_equity = sum(liabilities.values()) + sum(equity.values())
+
+    return render_template('balance_sheet.html', 
+                         assets=assets, 
+                         total_assets=round(total_assets, 2),
+                         liabilities=liabilities, 
+                         equity=equity, 
+                         total_liab_equity=round(total_liab_equity, 2))
 @app.route('/reports')
 @login_required
 def reports():
