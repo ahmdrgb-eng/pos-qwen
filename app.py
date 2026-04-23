@@ -1067,7 +1067,7 @@ def backup_database():
         if os.name == 'nt':  # Windows
             db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bookstore.db')
         else:  # Linux
-            db_path = '/var/www/pos_qwen/bookstore.db'
+            db_path = '/var/www/pos_qwen/instance/bookstore.db'
         
         # التحقق من وجود الملف
         if not os.path.exists(db_path):
