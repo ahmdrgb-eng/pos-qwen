@@ -1025,6 +1025,75 @@ def settings():
     return render_template('settings.html', settings=s)
 
 # ===================== التقارير والتحليلات =====================
+@app.route('/reports/income-statement')
+@login_required
+@manager_required
+def income_statement():
+    branch_id = session.get('branch_id') or current_user.branch_id
+    today = datetime.now().date()
+    start_str = request.args.get('start_date', (today - timedelta(days=30)).strftime('%Y-%m-%d'))
+    end_str = request.args.get('end_date', today.strftime('%Y-%m-%d'))
+    
+    try:
+        start_dt = datetime.strptime(start_str, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_str, '%Y-%m-%d') + timedelta(days=1)
+    except ValueError:
+        flash('تاريخ غير صحيح', 'danger')
+        return redirect(url_for('dashboard'))
+
+    # جلب الفواتير المكتملة في الفترة المحددة
+    inv_q = Invoice.query.filter(
+        Invoice.status == 'completed', 
+        Invoice.created_at >= start_dt, 
+        Invoice.created_at < end_dt
+    )
+    
+    if current_user.role != 'admin': 
+        inv_q = inv_q.filter_by(branch_id=branch_id)
+        
+    invoices = inv_q.all()
+    
+    total_revenue = sum(inv.total for inv in invoices)
+    
+    # حساب تكلفة البضاعة المباعة (COGS)
+    total_cogs = 0.0
+    for inv in invoices:
+        items = InvoiceItem.query.filter_by(invoice_id=inv.id).all()
+        for item in items:
+            book = db.session.get(Book, item.book_id)
+            if book:
+                total_cogs += (item.quantity * book.cost_price)
+                
+    gross_profit = total_revenue - total_cogs
+    
+    # جلب المصروفات
+    exp_q = Expense.query.filter(
+        Expense.expense_date >= start_dt, 
+        Expense.expense_date < end_dt
+    )
+    if current_user.role != 'admin': 
+        exp_q = exp_q.filter_by(branch_id=branch_id)
+        
+    expenses = exp_q.all()
+    total_expenses = sum(e.amount for e in expenses)
+    
+    net_profit = gross_profit - total_expenses
+    
+    # تفاصيل المصروفات حسب الحساب
+    exp_details = {}
+    for e in expenses:
+        acc_name = e.account.name if e.account else 'مصروفات عامة'
+        exp_details[acc_name] = exp_details.get(acc_name, 0) + e.amount
+        
+    return render_template('income_statement.html', 
+                         total_revenue=total_revenue, 
+                         total_cogs=total_cogs, 
+                         gross_profit=gross_profit, 
+                         total_expenses=total_expenses, 
+                         net_profit=net_profit, 
+                         exp_details=exp_details, 
+                         start_date=start_str, 
+                         end_date=end_str)
 @app.route('/reports')
 @login_required
 def reports():
