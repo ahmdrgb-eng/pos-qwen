@@ -343,6 +343,76 @@ def customers():
     data = [{'customer': c, 'inv_count': Invoice.query.filter_by(customer_id=c.id, status='completed').count()} for c in Customer.query.all()]
     return render_template('customers.html', customers=data)
 
+@app.route('/customers/edit/<int:customer_id>', methods=['GET', 'POST'])
+@login_required
+def edit_customer(customer_id):
+    customer = db.session.get(Customer, customer_id)
+    if not customer:
+        flash('❌ العميل غير موجود', 'danger')
+        return redirect(url_for('customers'))
+
+    if request.method == 'POST':
+        # تحديث الحقول (عدّلها حسب حقول جدول Customer في قاعدة بياناتك)
+        customer.name = request.form.get('name', '').strip()
+        customer.phone = request.form.get('phone', '').strip()
+        customer.email = request.form.get('email', '').strip()
+        customer.address = request.form.get('address', '').strip()
+        # customer.trn = request.form.get('trn', '').strip()  # إذا كان لديك حقل TRN
+        
+        try:
+            db.session.commit()
+            flash('✅ تم تحديث بيانات العميل بنجاح', 'success')
+            return redirect(url_for('customers'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'❌ خطأ في التحديث: {str(e)}', 'danger')
+
+    return render_template('edit_customer.html', customer=customer)
+
+@app.route('/customers/delete/<int:customer_id>', methods=['POST'])
+@login_required
+def delete_customer(customer_id):
+    customer = db.session.get(Customer, customer_id)
+    if not customer:
+        flash('❌ العميل غير موجود', 'danger')
+        return redirect(url_for('customers'))
+    
+    try:
+        # (اختياري) منع الحذف إذا كان للعميل فواتير
+        # if Invoice.query.filter_by(customer_id=customer_id).first():
+        #     flash('⚠️ لا يمكن حذف العميل لوجود فواتير مرتبطة به', 'warning')
+        #     return redirect(url_for('customers'))
+            
+        db.session.delete(customer)
+        db.session.commit()
+        flash('✅ تم حذف العميل بنجاح', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'❌ خطأ أثناء الحذف: {str(e)}', 'danger')
+        
+    return redirect(url_for('customers'))
+    customer = db.session.get(Customer, customer_id)
+    if not customer:
+        flash('❌ العميل غير موجود', 'danger')
+        return redirect(url_for('customers'))
+
+    # 🔒 حماية: منع الحذف إذا كان للعميل فواتير مرتبطة
+    try:
+        if hasattr(customer, 'invoices') and customer.invoices.count() > 0:
+            flash('⚠️ لا يمكن حذف العميل لوجود فواتير مرتبطة به. يمكنك تعديل البيانات بدلاً من الحذف.', 'warning')
+            return redirect(url_for('customers'))
+    except:
+        pass  # تجاوز الخطأ إذا لم تكن العلاقة معرفة
+
+    try:
+        db.session.delete(customer)
+        db.session.commit()
+        flash('✅ تم حذف العميل بنجاح', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'❌ خطأ في الحذف: {str(e)}', 'danger')
+
+    return redirect(url_for('customers'))
 @app.route('/customers/add', methods=['POST'])
 @login_required
 def add_customer(): 
