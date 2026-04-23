@@ -238,7 +238,63 @@
 <!-- ✅ مكتبات التصدير (تم نقلها للمكان الصحيح) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+// ===== دوال تحويل الأرقام إلى كلمات إنجليزية =====
+function numberToWords(num) {
+    if (num === 0) return 'Zero';
+    
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    
+    let words = '';
+    let integerPart = Math.floor(num);
+    let decimalPart = Math.round((num - integerPart) * 100);
+    
+    if (integerPart >= 1000000) {
+        words += convertHundreds(Math.floor(integerPart / 1000000)) + ' Million ';
+        integerPart %= 1000000;
+    }
+    if (integerPart >= 1000) {
+        words += convertHundreds(Math.floor(integerPart / 1000)) + ' Thousand ';
+        integerPart %= 1000;
+    }
+    if (integerPart > 0) {
+        words += convertHundreds(integerPart);
+    }
+    
+    let finalWords = words.trim();
+    if (decimalPart > 0) {
+        finalWords += ' and ' + decimalPart + '/100';
+    }
+    
+    return finalWords;
+}
 
+function convertHundreds(num) {
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+    const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    
+    let words = '';
+    
+    if (num >= 100) {
+        words += ones[Math.floor(num / 100)] + ' Hundred ';
+        num %= 100;
+    }
+    if (num >= 20) {
+        words += tens[Math.floor(num / 10)] + ' ';
+        num %= 10;
+    } else if (num >= 10) {
+        words += teens[num - 10] + ' ';
+        num = 0;
+    }
+    if (num > 0) {
+        words += ones[num] + ' ';
+    }
+    
+    return words;
+}
+// ===== نهاية دوال التحويل =====
 <script>
 let allBooks = [];
 let cart = JSON.parse(localStorage.getItem('pos_cart')) || [];

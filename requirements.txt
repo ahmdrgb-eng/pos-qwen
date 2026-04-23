@@ -5,3 +5,4 @@ Werkzeug==3.0.1
 reportlab==4.0.7
 pandas>=2.2.0
 openpyxl>=3.1.5
+pip install gunicorn

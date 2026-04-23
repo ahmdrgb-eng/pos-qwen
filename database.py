@@ -235,3 +235,45 @@ class PurchaseInvoiceItem(db.Model):
     quantity = db.Column(db.Integer, nullable=False)
     unit_cost = db.Column(db.Float, nullable=False)
     total_cost = db.Column(db.Float, nullable=False)
+
+    class CustomerReturn(db.Model):
+    __tablename__ = 'customer_return'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    return_number = db.Column(db.String(50), unique=True, nullable=False)  # رقم المرتجع: RET-2024-001
+    invoice_id = db.Column(db.Integer, db.ForeignKey('invoice.id'), nullable=False)  # الفاتورة الأصلية
+    customer_id = db.Column(db.Integer, db.ForeignKey('customer.id'), nullable=False)
+    branch_id = db.Column(db.Integer, db.ForeignKey('branch.id'), nullable=False)
+    
+    # بيانات المرتجع
+    subtotal = db.Column(db.Float, default=0.0)  # قيمة البنود قبل الخصم
+    discount = db.Column(db.Float, default=0.0)   # خصم إن وُجد
+    tax = db.Column(db.Float, default=0.0)        # ضريبة
+    total = db.Column(db.Float, default=0.0)      # الإجمالي النهائي (يُخصم من العميل)
+    
+    reason = db.Column(db.String(200))  # سبب المرتجع
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    
+    # العلاقات
+    invoice = db.relationship('Invoice', backref='returns')
+    customer = db.relationship('Customer', backref='returns')
+    branch = db.relationship('Branch', backref='returns')
+    creator = db.relationship('User', backref='created_returns')
+    items = db.relationship('ReturnItem', backref='return_order', lazy=True, cascade='all, delete-orphan')
+
+class ReturnItem(db.Column):
+    __tablename__ = 'return_item'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    return_id = db.Column(db.Integer, db.ForeignKey('customer_return.id'), nullable=False)
+    book_id = db.Column(db.Integer, db.ForeignKey('book.id'), nullable=False)
+    invoice_item_id = db.Column(db.Integer, db.ForeignKey('invoice_item.id'))  # ربط بالعنصر الأصلي
+    
+    quantity = db.Column(db.Integer, nullable=False)
+    unit_price = db.Column(db.Float, nullable=False)  # سعر الوحدة وقت الشراء
+    discount = db.Column(db.Float, default=0.0)
+    total = db.Column(db.Float, nullable=False)  # quantity * unit_price - discount
+    
+    book = db.relationship('Book', backref='return_items')
