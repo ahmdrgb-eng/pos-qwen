@@ -1055,10 +1055,53 @@ import os
 from flask import send_file
 from datetime import datetime
 
+import shutil
+import tempfile
+
 @app.route('/settings/backup')
 @login_required
 @admin_required
 def backup_database():
+    try:
+        # تحديد المسار الصحيح لقاعدة البيانات
+        if os.name == 'nt':  # Windows
+            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bookstore.db')
+        else:  # Linux
+            db_path = '/var/www/pos_qwen/bookstore.db'
+        
+        # التحقق من وجود الملف
+        if not os.path.exists(db_path):
+            flash('❌ ملف قاعدة البيانات غير موجود!', 'danger')
+            return redirect(url_for('settings'))
+        
+        # التحقق من حجم الملف
+        file_size = os.path.getsize(db_path)
+        if file_size < 1024:  # أقل من 1KB
+            flash(f'⚠️ ملف قاعدة البيانات صغير جداً ({file_size} bytes)! قد يكون فارغاً.', 'warning')
+        
+        # إنشاء نسخة مؤقتة لضمان عدم تلف الملف الأصلي
+        temp_dir = tempfile.gettempdir()
+        temp_backup_path = os.path.join(temp_dir, f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+        shutil.copy2(db_path, temp_backup_path)  # copy2 تحافظ على الصلاحيات
+        
+        # إنشاء اسم الملف للتحميل
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        filename = f"pos_backup_{timestamp}.db"
+        
+        # إرسال الملف
+        return send_file(
+            temp_backup_path,
+            mimetype='application/octet-stream',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        print(f"Backup Error: {e}")
+        import traceback
+        traceback.print_exc()
+        flash(f'❌ حدث خطأ أثناء النسخ الاحتياطي: {str(e)}', 'danger')
+        return redirect(url_for('settings'))
     try:
         # تحديد مسار قاعدة البيانات ديناميكياً حسب النظام
         if os.name == 'nt':  # Windows
@@ -1121,6 +1164,87 @@ from flask import request, redirect, url_for, flash
 @login_required
 @admin_required
 def restore_database():
+    if 'backup_file' not in request.files:
+        flash('❌ لم يتم اختيار ملف', 'danger')
+        return redirect(url_for('settings'))
+        
+    file = request.files['backup_file']
+    
+    if file.filename == '' or not file.filename.endswith('.db'):
+        flash('❌ ملف غير صالح', 'danger')
+        return redirect(url_for('settings'))
+        
+    try:
+        # تحديد المسارات
+        if os.name == 'nt':
+            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bookstore.db')
+            temp_path = os.path.join(tempfile.gettempdir(), 'temp_restore.db')
+        else:
+            db_path = '/var/www/pos_qwen/bookstore.db'
+            temp_path = '/tmp/temp_restore.db'
+        
+        # حفظ الملف المرفوع
+        file.save(temp_path)
+        
+        # التحقق من حجم الملف المرفوع
+        uploaded_size = os.path.getsize(temp_path)
+        print(f"📦 حجم الملف المرفوع: {uploaded_size} bytes")
+        
+        if uploaded_size < 1024:
+            raise Exception("الملف المرفوع صغير جداً أو فارغ!")
+        
+        # إغلاق جميع الاتصالات بقاعدة البيانات
+        db.session.close()
+        db.engine.dispose()
+        
+        # إغلاق التطبيق مؤقتاً (للسيرفر فقط)
+        if os.name != 'nt':
+            import subprocess
+            subprocess.call(['sudo', 'systemctl', 'stop', 'pos_qwen'])
+        
+        # نسخ احتياطي من القاعدة الحالية
+        if os.path.exists(db_path):
+            backup_path = db_path + '.backup_before_restore'
+            shutil.copy2(db_path, backup_path)
+            print(f"💾 تم حفظ نسخة احتياطية من القاعدة الحالية: {backup_path}")
+        
+        # استبدال القاعدة
+        shutil.copy2(temp_path, db_path)
+        print(f"✅ تم استبدال قاعدة البيانات بنجاح")
+        
+        # ضبط الصلاحيات
+        if os.name != 'nt':
+            os.chown(db_path, 33, 33)  # www-data
+            os.chmod(db_path, 0o664)
+        
+        # التحقق من البيانات
+        if os.name != 'nt':
+            import subprocess
+            result = subprocess.run(
+                ['sqlite3', db_path, "SELECT COUNT(*) FROM user;"],
+                capture_output=True, text=True
+            )
+            user_count = result.stdout.strip()
+            print(f"👥 عدد المستخدمين في الملف المستعاد: {user_count}")
+        
+        # تنظيف الملف المؤقت
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        # إعادة التشغيل (للسيرفر فقط)
+        if os.name != 'nt':
+            import subprocess
+            subprocess.call(['sudo', 'systemctl', 'start', 'pos_qwen'])
+        
+        flash('✅ تم استعادة قاعدة البيانات بنجاح!', 'success')
+        return redirect(url_for('login'))
+        
+    except Exception as e:
+        print(f"❌ Restore Error: {e}")
+        import traceback
+        traceback.print_exc()
+        flash(f'❌ خطأ في الاستعادة: {str(e)}', 'danger')
+        return redirect(url_for('settings'))
     if 'backup_file' not in request.files:
         flash('❌ لم يتم اختيار ملف للنسخ الاحتياطي', 'danger')
         return redirect(url_for('settings'))
