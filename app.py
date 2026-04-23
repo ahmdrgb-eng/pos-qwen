@@ -1057,11 +1057,59 @@ from datetime import datetime
 
 import shutil
 import tempfile
-
 @app.route('/settings/backup')
 @login_required
 @admin_required
 def backup_database():
+    try:
+        # 1. استخراج المسار الحقيقي من إعدادات SQLAlchemy مباشرة
+        uri = app.config['SQLALCHEMY_DATABASE_URI']
+        if uri.startswith('sqlite:///'):
+            db_file = uri.replace('sqlite:///', '')
+            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), db_file)
+        elif uri.startswith('sqlite:////'):
+            db_path = uri.replace('sqlite:////', '')
+        else:
+            db_path = uri
+
+        # 2. إذا لم يُعثر عليه، ابحث في مجلد instance (الشائع في Flask)
+        if not os.path.exists(db_path):
+            instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'bookstore.db')
+            if os.path.exists(instance_path):
+                db_path = instance_path
+            else:
+                flash(f'❌ لم يتم العثور على قاعدة البيانات! المسار المجرب: {db_path}', 'danger')
+                return redirect(url_for('settings'))
+
+        # 3. التحقق من الحجم
+        file_size = os.path.getsize(db_path)
+        if file_size < 1024:
+            flash(f'⚠️ تنبيه: حجم قاعدة البيانات صغير جداً ({file_size} بايت). قد تكون فارغة.', 'warning')
+        else:
+            flash(f'✅ جاري تحميل النسخة الاحتياطية ({file_size / 1024:.1f} KB)...', 'info')
+
+        # 4. إنشاء نسخة مؤقتة آمنة
+        temp_dir = tempfile.gettempdir()
+        temp_backup_path = os.path.join(temp_dir, f"safe_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+        shutil.copy2(db_path, temp_backup_path)
+
+        # 5. اسم الملف للتحميل
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        filename = f"pos_backup_{timestamp}.db"
+
+        return send_file(
+            temp_backup_path,
+            mimetype='application/octet-stream',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        print(f"Backup Error: {e}")
+        import traceback
+        traceback.print_exc()
+        flash(f'❌ حدث خطأ أثناء النسخ: {str(e)}', 'danger')
+        return redirect(url_for('settings'))
     try:
         # تحديد المسار الصحيح لقاعدة البيانات
         if os.name == 'nt':  # Windows
