@@ -1164,6 +1164,106 @@ def balance_sheet():
 def reports():
     branch_id = session.get('branch_id')
     today = datetime.now().date()
+    
+    # تحديد التواريخ الافتراضية (آخر 30 يوم)
+    start_date_str = request.args.get('start_date', (today - timedelta(days=30)).strftime('%Y-%m-%d'))
+    end_date_str = request.args.get('end_date', today.strftime('%Y-%m-%d'))
+    
+    try:
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d') + timedelta(days=1) # ليشمل اليوم الأخير بالكامل
+    except ValueError:
+        flash('تاريخ غير صحيح', 'danger')
+        return redirect(url_for('dashboard'))
+
+    # تصفية الفواتير حسب الصلاحيات والتاريخ
+    inv_query = Invoice.query.filter(
+        Invoice.status == 'completed',
+        Invoice.created_at >= start_date,
+        Invoice.created_at < end_date
+    )
+    
+    if current_user.role != 'admin':
+        if not branch_id:
+            flash('لم يتم تحديد فرع', 'warning')
+            return redirect(url_for('dashboard'))
+        inv_query = inv_query.filter_by(branch_id=branch_id)
+        branches = [Branch.query.get(branch_id)]
+        selected_branch = branch_id
+    else:
+        branches = Branch.query.all()
+        selected_branch = request.args.get('branch_id', type=int)
+        if selected_branch:
+            inv_query = inv_query.filter_by(branch_id=selected_branch)
+        else:
+            selected_branch = None
+
+    invoices = inv_query.order_by(Invoice.created_at.desc()).all()
+    
+    # حساب المجاميع الأساسية
+    total_sales = sum(inv.total for inv in invoices)
+    total_discount = sum(inv.discount or 0 for inv in invoices)
+    total_tax = sum(inv.tax or 0 for inv in invoices)
+    
+    # جلب عناصر الفواتير المرتبطة بهذه الفواتير فقط (استعلام واحد سريع بدلاً من حلقات متداخلة)
+    invoice_ids = [inv.id for inv in invoices]
+    items_data = []
+    if invoice_ids:
+        # جلب العناصر مع معلومات الكتاب في استعلام واحد
+        items_with_books = db.session.query(InvoiceItem, Book.title).join(Book, InvoiceItem.book_id == Book.id)\
+                                     .filter(InvoiceItem.invoice_id.in_(invoice_ids)).all()
+        
+        total_items_count = sum(item.quantity for item, _ in items_with_books)
+        
+        # تحضير بيانات أفضل الكتب مبيعاً
+        book_sales = {}
+        for item, title in items_with_books:
+            bid = item.book_id
+            if bid not in book_sales:
+                book_sales[bid] = {'title': title, 'qty': 0, 'revenue': 0}
+            book_sales[bid]['qty'] += item.quantity
+            book_sales[bid]['revenue'] += item.total
+        
+        top_books = sorted(book_sales.values(), key=lambda x: x['revenue'], reverse=True)[:10]
+    else:
+        total_items_count = 0
+        top_books = []
+
+    # إحصائيات طرق الدفع
+    payment_stats = {}
+    for inv in invoices:
+        method = inv.payment_method or 'unknown'
+        payment_stats[method] = payment_stats.get(method, 0) + inv.total
+
+    # بيانات الرسم البياني اليومي
+    daily_sales = {}
+    for inv in invoices:
+        day_key = inv.created_at.date().strftime('%Y-%m-%d')
+        daily_sales[day_key] = daily_sales.get(day_key, 0) + inv.total
+    
+    daily_chart = [{'date': k, 'value': v} for k, v in sorted(daily_sales.items())]
+    
+    avg_invoice = total_sales / len(invoices) if invoices else 0
+    
+    settings = AppSettings.query.first()
+    
+    return render_template('reports.html', 
+                         branches=branches, 
+                         selected_branch=selected_branch, 
+                         start_date=start_date_str, 
+                         end_date=end_date_str,
+                         total_sales=total_sales, 
+                         total_discount=total_discount, 
+                         total_tax=total_tax, 
+                         total_items=total_items_count,
+                         avg_invoice=avg_invoice, 
+                         invoice_count=len(invoices), 
+                         top_books=top_books, 
+                         payment_stats=payment_stats,
+                         daily_chart=daily_chart, 
+                         currency=settings.currency if settings else 'د.إ')
+    branch_id = session.get('branch_id')
+    today = datetime.now().date()
     start_date = request.args.get('start_date', (today - timedelta(days=30)).strftime('%Y-%m-%d'))
     end_date = request.args.get('end_date', today.strftime('%Y-%m-%d'))
     
