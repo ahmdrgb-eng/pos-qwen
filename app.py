@@ -437,6 +437,33 @@ def add_category(): db.session.add(Category(name=request.form['name'], descripti
 @app.route('/books')
 @login_required
 def books():
+    try:
+        branch_id = session.get('branch_id') or current_user.branch_id
+        
+        # عرض كل الكتب النشطة (بدون تصفية بالفرع للتجربة)
+        all_books = Book.query.filter_by(is_active=True).order_by(Book.title).all()
+        
+        # جلب المخزون للفرع الحالي (إذا وجد)
+        stock_map = {}
+        if branch_id:
+            inventory_items = BranchInventory.query.filter_by(branch_id=branch_id).all()
+            for inv in inventory_items:
+                stock_map[inv.book_id] = inv.quantity
+        
+        return render_template('books.html', 
+            books=all_books,  # عرض كل الكتب
+            stock_map=stock_map,
+            authors=Author.query.all(), 
+            categories=Category.query.all(), 
+            publishers=Publisher.query.all(), 
+            branches=Branch.query.all()
+        )
+    except Exception as e:
+        import traceback
+        print(f"Error in books route: {e}")
+        print(traceback.format_exc())
+        flash(f'خطأ: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
     branch_id = session.get('branch_id') or current_user.branch_id
     books = Book.query.filter_by(is_active=True).all()
     stock_map = {inv.book_id: inv.quantity for inv in BranchInventory.query.filter_by(branch_id=branch_id).all()}
