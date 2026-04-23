@@ -52,6 +52,11 @@
                                 <a href="{{ url_for('customer_statement', id=item.customer.id) }}" class="btn btn-outline-secondary" title="كشف حساب">
                                     <i class="fas fa-receipt"></i>
                                 </a>
+                                <!-- في عمود الإجراءات -->
+<a href="{{ url_for('customer_returns', customer_id=item.customer.id) }}" 
+   class="btn btn-sm btn-outline-info me-1" title="المرتجعات">
+    <i class="fas fa-undo"></i>
+</a>
                             </div>
                         </td>
                     </tr>
