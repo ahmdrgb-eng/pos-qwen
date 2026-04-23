@@ -1057,6 +1057,65 @@ def backup_database():
         print(f"Backup Error: {e}")
         flash(f'❌ حدث خطأ أثناء النسخ الاحتياطي: {str(e)}', 'danger')
         return redirect(url_for('settings'))
+
+import os
+import shutil
+from flask import request, redirect, url_for, flash
+
+@app.route('/settings/restore', methods=['POST'])
+@login_required
+@admin_required
+def restore_database():
+    if 'backup_file' not in request.files:
+        flash('❌ لم يتم اختيار ملف للنسخ الاحتياطي', 'danger')
+        return redirect(url_for('settings'))
+        
+    file = request.files['backup_file']
+    
+    if file.filename == '':
+        flash('❌ اسم الملف فارغ', 'danger')
+        return redirect(url_for('settings'))
+        
+    # التأكد من أن الامتداد هو .db فقط للأمان
+    if not file.filename.endswith('.db'):
+        flash('❌ نوع الملف غير صحيح. يجب أن يكون ملف .db', 'danger')
+        return redirect(url_for('settings'))
+        
+    try:
+        db_path = '/var/www/pos_qwen/bookstore.db'
+        temp_path = '/tmp/temp_restore.db'
+        
+        # 1. حفظ الملف المرفوع مؤقتاً في مجلد /tmp
+        file.save(temp_path)
+        
+        # 2. التحقق السريع من صحة الملف (اختياري: التأكد من أنه SQLite صالح)
+        # يمكن إضافة كود هنا للتحقق، لكن سنكتفي بالاستبدال المباشر للسرعة
+        
+        # 3. استبدال قاعدة البيانات الحالية بالملف الجديد
+        # نستخدم shutil.copyfile لضمان نسخ المحتوى بشكل آمن
+        shutil.copyfile(temp_path, db_path)
+        
+        # 4. تنظيف الملف المؤقت
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            
+        # 5. ضبط الصلاحيات مرة أخرى لضمان عمل التطبيق
+        os.chown(db_path, 0, 33) # root:www-data (IDs قد تختلف حسب النظام، لكن www-data عادة 33)
+        os.chmod(db_path, 0o664)
+        
+        flash('✅ تم استعادة قاعدة البيانات بنجاح! سيتم إعادة تحميل الصفحة...', 'success')
+        
+        # إعادة تشغيل الخدمة لتطبيق التغييرات (اختياري ولكن مفضل لضمان عدم وجود مشاكل في الذاكرة)
+        # ملاحظة: هذا قد يقطع الاتصال لحظياً
+        import subprocess
+        subprocess.call(['sudo', 'systemctl', 'restart', 'pos_qwen'])
+        
+        return redirect(url_for('settings'))
+        
+    except Exception as e:
+        print(f"Restore Error: {e}")
+        flash(f'❌ حدث خطأ أثناء الاستعادة: {str(e)}', 'danger')
+        return redirect(url_for('settings'))
 # ===================== التقارير والتحليلات =====================
 @app.route('/reports/income-statement')
 @login_required

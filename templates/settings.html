@@ -48,6 +48,25 @@
         <small class="d-block mt-2 text-muted">سيتم حفظ الملف باسم: pos_backup_YYYY-MM-DD_HH-MM-SS.db</small>
     </div>
 </div>
+<!-- قسم استعادة النسخة الاحتياطية -->
+<div class="card mt-3 border-warning">
+    <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0"><i class="fas fa-upload"></i> استعادة نسخة احتياطية</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-danger font-weight-bold">⚠️ تحذير: سيقوم هذا الإجراء بحذف جميع البيانات الحالية واستبدالها ببيانات الملف المرفوع.</p>
+        
+        <form action="{{ url_for('restore_database') }}" method="POST" enctype="multipart/form-data" onsubmit="return confirm('هل أنت متأكد تماماً؟ سيتم حذف جميع البيانات الحالية واستبدالها بالنسخة المرفوعة!');">
+            <div class="form-group">
+                <label for="backup_file">اختر ملف النسخة الاحتياطية (.db)</label>
+                <input type="file" class="form-control-file" id="backup_file" name="backup_file" accept=".db" required>
+            </div>
+            <button type="submit" class="btn btn-warning mt-2">
+                <i class="fas fa-sync-alt"></i> استعادة البيانات
+            </button>
+        </form>
+    </div>
+</div>
 
                     <div class="text-end mt-4"><button type="submit" class="btn btn-primary btn-lg px-5"><i class="fas fa-save"></i> حفظ الإعدادات</button></div>
                 </form>
