@@ -838,6 +838,7 @@ def create_invoice():
         if not items or not isinstance(items, list):
             return jsonify({'error': 'السلة فارغة'}), 400
 
+        # دالة مساعدة لتحويل القيم بأمان
         def sf(v, d=0.0):
             try: return float(v) if v is not None else d
             except: return d
@@ -847,14 +848,33 @@ def create_invoice():
         discount_pct = sf(data.get('discount_pct'))
         cash_discount = sf(data.get('cash_discount'))
         delivery_fee = sf(data.get('delivery_fee'))
-        tax = sf(data.get('tax'))
-        total = sf(data.get('total'))
+        
+        # ✅ 1. استقبال قيم الضريبة من الواجهة
+        tax_received = sf(data.get('tax'))
+        apply_tax = int(data.get('apply_tax', 1))  # 1 = مفعل، 0 = معطل
+        tax_rate = sf(data.get('tax_rate', 5))     # معدل الضريبة المئوي
+        
+        # ✅ 2. المنطق الحاسم: حساب الضريبة في السيرفر للتأكد
+        # نحسب الأساس الخاضع للضريبة (المجموع - الخصومات)
+        taxable_base = max(subtotal - (subtotal * discount_pct / 100) - cash_discount, 0)
+        
+        if apply_tax == 1:
+            # إذا كانت الضريبة مفعلة، نحسبها بدقة
+            final_tax = round(taxable_base * (tax_rate / 100), 2)
+        else:
+            # إذا ألغاها الكاشير، نجعلها صفر إجبارياً
+            final_tax = 0.0
+            
+        # ✅ 3. حساب الإجمالي النهائي بناءً على الضريبة المعتمدة
+        final_total = round(taxable_base + final_tax + delivery_fee, 2)
+
         payment_method = data.get('payment_method', 'cash')
         save_to_db = data.get('save_to_db', True)
 
+        # حالة "عرض سعر" أو طباعة فقط (لا تحفظ في القاعدة)
         if not save_to_db:
             inv_num = generate_invoice_number(branch_id)
-            return jsonify({'success': True, 'print_only': True, 'invoice_number': inv_num, 'total': total})
+            return jsonify({'success': True, 'print_only': True, 'invoice_number': inv_num, 'total': final_total})
 
         inv_num = generate_invoice_number(branch_id)
         branch = db.session.get(Branch, branch_id)
@@ -866,10 +886,10 @@ def create_invoice():
             cashier_id=current_user.id,
             customer_id=customer_id,
             subtotal=subtotal,
-            discount=discount_pct,
-            tax=tax,
-            total=total,
-            paid_amount=total,
+            discount=(subtotal * discount_pct / 100) + cash_discount, # حفظ إجمالي الخصم
+            tax=final_tax,      # ✅ حفظ قيمة الضريبة النهائية (0 أو المحسوبة)
+            total=final_total,  # ✅ حفظ الإجمالي النهائي المطابق
+            paid_amount=final_total,
             payment_method=payment_method,
             status='completed',
             currency=branch.currency if branch else 'د.إ',
@@ -915,8 +935,8 @@ def create_invoice():
         if customer_id:
             cust = db.session.get(Customer, customer_id)
             if cust:
-                cust.total_purchases = (cust.total_purchases or 0) + total
-                cust.loyalty_points = (cust.loyalty_points or 0) + int(total / 10)
+                cust.total_purchases = (cust.total_purchases or 0) + final_total
+                cust.loyalty_points = (cust.loyalty_points or 0) + int(final_total / 10)
 
         db.session.commit()
         return jsonify({'success': True, 'invoice_number': inv_num, 'invoice_id': new_invoice.id})
@@ -926,7 +946,6 @@ def create_invoice():
         import traceback
         print(f"\n🔥 خطأ في create_invoice: {e}\n{traceback.format_exc()}\n")
         return jsonify({'error': f'حدث خطأ أثناء حفظ الفاتورة: {str(e)}'}), 500
-
 # ===================== الفواتير =====================
 @app.route('/invoices')
 @login_required
