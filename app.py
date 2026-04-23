@@ -1033,6 +1033,34 @@ from datetime import datetime
 @admin_required
 def backup_database():
     try:
+        # تحديد مسار قاعدة البيانات ديناميكياً حسب النظام
+        if os.name == 'nt':  # Windows
+            db_path = os.path.join(os.path.dirname(__file__), 'bookstore.db')
+        else:  # Linux/Mac
+            db_path = '/var/www/pos_qwen/bookstore.db'
+        
+        # التحقق من وجود الملف
+        if not os.path.exists(db_path):
+            flash('❌ ملف قاعدة البيانات غير موجود!', 'danger')
+            return redirect(url_for('settings'))
+        
+        # إنشاء اسم الملف بالتاريخ والوقت الحالي
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        filename = f"pos_backup_{timestamp}.db"
+        
+        # إرسال الملف للمستخدم للتحميل
+        return send_file(
+            db_path,
+            mimetype='application/octet-stream',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        print(f"Backup Error: {e}")
+        flash(f'❌ حدث خطأ أثناء النسخ الاحتياطي: {str(e)}', 'danger')
+        return redirect(url_for('settings'))
+    try:
         # مسار قاعدة البيانات في السيرفر
         db_path = '/var/www/pos_qwen/bookstore.db'
         
@@ -1066,6 +1094,58 @@ from flask import request, redirect, url_for, flash
 @login_required
 @admin_required
 def restore_database():
+    if 'backup_file' not in request.files:
+        flash('❌ لم يتم اختيار ملف للنسخ الاحتياطي', 'danger')
+        return redirect(url_for('settings'))
+        
+    file = request.files['backup_file']
+    
+    if file.filename == '':
+        flash('❌ اسم الملف فارغ', 'danger')
+        return redirect(url_for('settings'))
+        
+    # التأكد من أن الامتداد هو .db فقط للأمان
+    if not file.filename.endswith('.db'):
+        flash('❌ نوع الملف غير صحيح. يجب أن يكون ملف .db', 'danger')
+        return redirect(url_for('settings'))
+        
+    try:
+        # تحديد مسار قاعدة البيانات ديناميكياً حسب النظام
+        if os.name == 'nt':  # Windows
+            db_path = os.path.join(os.path.dirname(__file__), 'bookstore.db')
+            temp_path = os.path.join(os.environ.get('TEMP', '.'), 'temp_restore.db')
+        else:  # Linux/Mac
+            db_path = '/var/www/pos_qwen/bookstore.db'
+            temp_path = '/tmp/temp_restore.db'
+        
+        # 1. حفظ الملف المرفوع مؤقتاً
+        file.save(temp_path)
+        
+        # 2. استبدال قاعدة البيانات الحالية بالملف الجديد
+        shutil.copyfile(temp_path, db_path)
+        
+        # 3. تنظيف الملف المؤقت
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            
+        # 4. ضبط الصلاحيات (فقط في لينكس)
+        if os.name != 'nt':
+            os.chown(db_path, 0, 33)  # root:www-data
+            os.chmod(db_path, 0o664)
+        
+        flash('✅ تم استعادة قاعدة البيانات بنجاح! سيتم إعادة تحميل الصفحة...', 'success')
+        
+        # إعادة تشغيل الخدمة فقط في السيرفر (لينكس)
+        if os.name != 'nt':
+            import subprocess
+            subprocess.call(['sudo', 'systemctl', 'restart', 'pos_qwen'])
+        
+        return redirect(url_for('settings'))
+        
+    except Exception as e:
+        print(f"Restore Error: {e}")
+        flash(f'❌ حدث خطأ أثناء الاستعادة: {str(e)}', 'danger')
+        return redirect(url_for('settings'))
     if 'backup_file' not in request.files:
         flash('❌ لم يتم اختيار ملف للنسخ الاحتياطي', 'danger')
         return redirect(url_for('settings'))
