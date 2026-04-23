@@ -1035,7 +1035,7 @@ def backup_database():
     try:
         # تحديد مسار قاعدة البيانات ديناميكياً حسب النظام
         if os.name == 'nt':  # Windows
-            db_path = os.path.join(os.path.dirname(__file__), 'bookstore.db')
+            db_path = os.path.join(os.path.dirname(__file__), 'instance', 'bookstore.db')
         else:  # Linux/Mac
             db_path = '/var/www/pos_qwen/bookstore.db'
         
@@ -1104,6 +1104,71 @@ def restore_database():
         flash('❌ اسم الملف فارغ', 'danger')
         return redirect(url_for('settings'))
         
+    if not file.filename.endswith('.db'):
+        flash('❌ نوع الملف غير صحيح. يجب أن يكون ملف .db', 'danger')
+        return redirect(url_for('settings'))
+        
+    try:
+        # تحديد المسارات حسب النظام
+        if os.name == 'nt':  # Windows
+            db_path = os.path.join(os.path.dirname(__file__), 'bookstore.db')
+            temp_path = os.path.join(os.environ.get('TEMP', '.'), 'temp_restore.db')
+        else:  # Linux
+            db_path = '/var/www/pos_qwen/bookstore.db'
+            temp_path = '/tmp/temp_restore.db'
+            
+        # 1. حفظ الملف المرفوع مؤقتاً
+        file.save(temp_path)
+        
+        # 2. إغلاق أي اتصال نشط بقاعدة البيانات لتجنب القفل
+        db.session.close()
+        db.engine.dispose()
+        
+        # 3. التأكد من حجم الملف المرفوع (تجنب الملفات الفارغة)
+        if os.path.getsize(temp_path) < 1024: # أقل من 1 كيلو بايت يعتبر مشبوهاً
+             raise Exception("الملف المرفوع صغير جداً أو فارغ!")
+
+        # 4. استبدال قاعدة البيانات الحالية
+        shutil.copyfile(temp_path, db_path)
+        
+        # 5. تنظيف الملف المؤقت
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            
+        # 6. ضبط الصلاحيات بدقة للسيرفر
+        if os.name != 'nt':
+            # تغيير المالك لـ www-data (المستخدم الذي يشغل Nginx/Gunicorn عادة)
+            import pwd, grp
+            uid = pwd.getpwnam('www-data').pw_uid
+            gid = grp.getgrnam('www-data').gr_gid
+            os.chown(db_path, uid, gid)
+            os.chmod(db_path, 0o664) # قراءة وكتابة للمالك والمجموعة
+        
+        flash('✅ تم استعادة قاعدة البيانات بنجاح! جاري إعادة تشغيل الخدمة...', 'success')
+        
+        # 7. إعادة تشغيل الخدمة بقوة
+        if os.name != 'nt':
+            import subprocess
+            # استخدام restart بدلاً من reload لضمان قطع الاتصالات القديمة
+            subprocess.call(['sudo', 'systemctl', 'restart', 'pos_qwen'])
+            
+        # توجيه المستخدم لصفحة تسجيل الدخول لضمان تجديد الجلسة
+        return redirect(url_for('login'))
+        
+    except Exception as e:
+        print(f"Restore Error: {e}")
+        flash(f'❌ حدث خطأ أثناء الاستعادة: {str(e)}', 'danger')
+        return redirect(url_for('settings'))
+    if 'backup_file' not in request.files:
+        flash('❌ لم يتم اختيار ملف للنسخ الاحتياطي', 'danger')
+        return redirect(url_for('settings'))
+        
+    file = request.files['backup_file']
+    
+    if file.filename == '':
+        flash('❌ اسم الملف فارغ', 'danger')
+        return redirect(url_for('settings'))
+        
     # التأكد من أن الامتداد هو .db فقط للأمان
     if not file.filename.endswith('.db'):
         flash('❌ نوع الملف غير صحيح. يجب أن يكون ملف .db', 'danger')
@@ -1112,7 +1177,7 @@ def restore_database():
     try:
         # تحديد مسار قاعدة البيانات ديناميكياً حسب النظام
         if os.name == 'nt':  # Windows
-            db_path = os.path.join(os.path.dirname(__file__), 'bookstore.db')
+            db_path = os.path.join(os.path.dirname(__file__), 'instance', 'bookstore.db')
             temp_path = os.path.join(os.environ.get('TEMP', '.'), 'temp_restore.db')
         else:  # Linux/Mac
             db_path = '/var/www/pos_qwen/bookstore.db'
