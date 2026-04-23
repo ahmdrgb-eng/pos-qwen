@@ -384,18 +384,24 @@ window.toggleExportButtons = function() {
 
 window.generateQuotationPDF = function() {
     if (cart.length === 0) { alert('السلة فارغة!'); return; }
-    calcTotal();
+    calcTotal(); // تأكد من تحديث الحسابات أولاً
     
+    // جلب القيم من الواجهة
     const qRef = 'QUO-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000);
     const qDate = new Date().toLocaleDateString('ar-EG');
     const client = document.getElementById('customerSelect').options[document.getElementById('customerSelect').selectedIndex].text;
+    
     const sub = parseFloat(document.getElementById('subTotal').textContent);
     const discPct = parseFloat(document.getElementById('discountPct').value) || 0;
     const cashDisc = parseFloat(document.getElementById('cashDiscount').value) || 0;
     const delivery = parseFloat(document.getElementById('deliveryFee').value) || 0;
-    const tax = parseFloat(document.getElementById('tax').textContent);
+    
+    // ✅ استخدام قيمة الضريبة المحسوبة فعلياً واحترام حالة التفعيل
+    const applyTax = document.getElementById('applyTax').checked;
+    const tax = applyTax ? parseFloat(document.getElementById('tax').textContent) : 0;
     const grand = parseFloat(document.getElementById('grandTotal').textContent);
 
+    // تعبئة بيانات الرأس
     document.getElementById('qRef').textContent = qRef;
     document.getElementById('qDate').textContent = qDate;
     document.getElementById('qClient').textContent = client;
@@ -403,43 +409,64 @@ window.generateQuotationPDF = function() {
     document.getElementById('qAddress').textContent = settings.address;
     document.getElementById('qPhone').textContent = settings.phone;
     document.getElementById('qLogo').innerHTML = settings.logo ? `<img src="${settings.logo}" style="max-height:45px;">` : '';
-    
     document.getElementById('qBankTitle').textContent = settings.bank.title;
     document.getElementById('qBankAcc').textContent = settings.bank.acc;
     document.getElementById('qBankIban').textContent = settings.bank.iban;
     document.getElementById('qBankName').textContent = settings.bank.name;
 
+    // ✅ بناء جدول العناصر بحسابات صحيحة
     let itemsHTML = '';
     cart.forEach((item, i) => {
-        const itemDisc = item.price * item.qty * (discPct / 100);
-        const net = item.price * item.qty - itemDisc;
-        const taxAmt = net * 0.05;
+        // حساب خصم العنصر (نسبة من السعر × الكمية)
+        const itemDisc = (item.price * item.qty) * (discPct / 100);
+        // صافي سعر العنصر بعد الخصم
+        const net = (item.price * item.qty) - itemDisc;
+        // ضريبة العنصر (فقط إذا كانت مفعلة)
+        const taxAmt = applyTax ? (net * (parseFloat('{{ settings.tax_rate or 5 }}') / 100)) : 0;
+        // إجمالي سطر العنصر
         const rowTotal = net + taxAmt;
+
         itemsHTML += `<tr>
             <td>${i+1}</td>
-            <td class="desc-cell"><span class="item-title">${item.title}</span><span class="item-isbn">ISBN: ${item.isbn || 'N/A'}</span></td>
+            <td class="desc-cell">
+                <span class="item-title">${item.title}</span>
+                <span class="item-isbn">ISBN: ${item.isbn || 'N/A'}</span>
+            </td>
             <td>${item.qty}</td>
             <td>${item.price.toFixed(2)}</td>
             <td style="color:#d9534f;">${itemDisc.toFixed(2)}</td>
             <td>${net.toFixed(2)}</td>
-            <td>VAT 5%</td>
+            <td>${applyTax ? '5%' : '-'}</td>
             <td>${taxAmt.toFixed(2)}</td>
             <td style="font-weight:bold;">${rowTotal.toFixed(2)}</td>
         </tr>`;
     });
     document.getElementById('qItems').innerHTML = itemsHTML;
     
+    // ✅ تحديث ملخص الأسعار
     document.getElementById('qSub').textContent = sub.toFixed(2) + ' ' + settings.currency;
+    
     const discRow = document.getElementById('qDiscRow');
     if(discPct > 0 || cashDisc > 0) {
         discRow.style.display = 'table-row';
         document.getElementById('qDisc').textContent = '-' + ((sub * discPct/100) + cashDisc).toFixed(2);
     } else { discRow.style.display = 'none'; }
-    document.getElementById('qTax').textContent = tax + ' ' + settings.currency;
+    
+    // إظهار الضريبة فقط إذا كانت مفعلة
+    const taxRow = document.getElementById('qTax').closest('tr');
+    if(applyTax && tax > 0) {
+        taxRow.style.display = 'table-row';
+        document.getElementById('qTax').textContent = tax + ' ' + settings.currency;
+    } else {
+        taxRow.style.display = 'none';
+    }
+    
     const delRow = document.getElementById('qDelRow');
     if(delivery > 0) { delRow.style.display = 'table-row'; document.getElementById('qDel').textContent = '+' + delivery.toFixed(2); } else { delRow.style.display = 'none'; }
+    
     document.getElementById('qTotal').textContent = grand + ' ' + settings.currency;
 
+    // إنشاء الملف
     const element = document.getElementById('quotationTemplate');
     element.style.display = 'block';
     
