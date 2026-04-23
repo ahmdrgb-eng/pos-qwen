@@ -1262,6 +1262,7 @@ def reports():
                          payment_stats=payment_stats,
                          daily_chart=daily_chart, 
                          currency=settings.currency if settings else 'د.إ')
+
     branch_id = session.get('branch_id')
     today = datetime.now().date()
     
@@ -1415,6 +1416,100 @@ def reports():
                          avg_invoice=avg_invoice, invoice_count=len(invoices), top_books=top_books, payment_stats=payment_stats,
                          daily_chart=daily_chart, currency=settings.currency if settings else 'د.إ')
 
+@app.route('/reports/export')
+@login_required
+@manager_required
+def export_report_excel():
+    try:
+        branch_id = session.get('branch_id')
+        start_date_str = request.args.get('start_date', (datetime.now().date() - timedelta(days=30)).strftime('%Y-%m-%d'))
+        end_date_str = request.args.get('end_date', datetime.now().date().strftime('%Y-%m-%d'))
+        
+        # تحويل التواريخ
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d') + timedelta(days=1)
+        except ValueError:
+            flash('تاريخ غير صحيح للتصدير', 'danger')
+            return redirect(url_for('reports'))
+
+        branch_names = {b.id: b.name for b in Branch.query.all()}
+        
+        # تصفية الفواتير حسب الصلاحيات
+        if current_user.role == 'admin':
+            selected_branch = request.args.get('branch_id', type=int)
+            if selected_branch:
+                invs = Invoice.query.filter(
+                    Invoice.branch_id == selected_branch, 
+                    Invoice.status == 'completed', 
+                    Invoice.created_at >= start_date, 
+                    Invoice.created_at < end_date
+                ).all()
+                branch_name = branch_names.get(selected_branch, 'All')
+            else:
+                invs = Invoice.query.filter(
+                    Invoice.status == 'completed', 
+                    Invoice.created_at >= start_date, 
+                    Invoice.created_at < end_date
+                ).all()
+                branch_name = 'All_Branches'
+        else:
+            invs = Invoice.query.filter(
+                Invoice.branch_id == branch_id, 
+                Invoice.status == 'completed', 
+                Invoice.created_at >= start_date, 
+                Invoice.created_at < end_date
+            ).all()
+            branch_name = branch_names.get(branch_id, 'Branch').replace(' ', '_')
+
+        # تنظيف اسم الفرع لاسم ملف آمن
+        safe_branch = "".join(c for c in branch_name if c.isalnum() or c in (' ', '_')).replace(' ', '_')
+        fname = f"Sales_Report_{safe_branch}_{start_date_str}_to_{end_date_str}.xlsx"
+        
+        # تجهيز البيانات للتصدير
+        data = []
+        for i in invs:
+            customer_name = i.customer_obj.name if i.customer_obj else 'Walk-in'
+            cashier_name = i.cashier_user.full_name if i.cashier_user else '-'
+            payment_method_map = {'cash':'Cash', 'card':'Card', 'transfer':'Transfer', 'credit':'Credit'}
+            
+            data.append({
+                'Invoice_No': i.invoice_number,
+                'Date': i.created_at.strftime('%Y-%m-%d %H:%M'),
+                'Customer': customer_name,
+                'Subtotal': i.subtotal,
+                'Discount': i.discount or 0,
+                'Tax': i.tax or 0,
+                'Total': i.total,
+                'Payment_Method': payment_method_map.get(i.payment_method, i.payment_method),
+                'Cashier': cashier_name,
+                'Branch': branch_names.get(i.branch_id, '-')
+            })
+            
+        df = pd.DataFrame(data)
+        
+        # إنشاء ملف Excel في الذاكرة
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Sales')
+            ws = writer.sheets['Sales']
+            # تعديل عرض الأعمدة تلقائياً
+            for col in ws.columns:
+                max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 25)
+                
+        output.seek(0)
+        return send_file(output, 
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+                         as_attachment=True, 
+                         download_name=fname)
+                         
+    except Exception as e:
+        print(f"Export Error: {e}")
+        traceback.print_exc()
+        flash(f'فشل التصدير: {str(e)}', 'danger')
+        return redirect(url_for('reports'))
+        
 @app.route('/books/<int:id>/statement')
 @login_required
 def book_statement(id):
