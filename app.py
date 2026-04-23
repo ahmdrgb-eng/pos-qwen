@@ -1024,6 +1024,39 @@ def settings():
         db.session.commit(); flash('تم حفظ الإعدادات', 'success'); return redirect(url_for('settings'))
     return render_template('settings.html', settings=s)
 
+import os
+from flask import send_file
+from datetime import datetime
+
+@app.route('/settings/backup')
+@login_required
+@admin_required
+def backup_database():
+    try:
+        # مسار قاعدة البيانات في السيرفر
+        db_path = '/var/www/pos_qwen/bookstore.db'
+        
+        # التحقق من وجود الملف
+        if not os.path.exists(db_path):
+            flash('❌ ملف قاعدة البيانات غير موجود!', 'danger')
+            return redirect(url_for('settings'))
+        
+        # إنشاء اسم الملف بالتاريخ والوقت الحالي
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        filename = f"pos_backup_{timestamp}.db"
+        
+        # إرسال الملف للمستخدم للتحميل
+        return send_file(
+            db_path,
+            mimetype='application/octet-stream',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        print(f"Backup Error: {e}")
+        flash(f'❌ حدث خطأ أثناء النسخ الاحتياطي: {str(e)}', 'danger')
+        return redirect(url_for('settings'))
 # ===================== التقارير والتحليلات =====================
 @app.route('/reports/income-statement')
 @login_required
@@ -1509,7 +1542,7 @@ def export_report_excel():
         traceback.print_exc()
         flash(f'فشل التصدير: {str(e)}', 'danger')
         return redirect(url_for('reports'))
-        
+
 @app.route('/books/<int:id>/statement')
 @login_required
 def book_statement(id):

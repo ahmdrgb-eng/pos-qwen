@@ -35,6 +35,19 @@
                         </div>
                         <div class="col-md-8"><label class="form-label">تغيير اللوجو</label><input type="file" name="logo" class="form-control" accept="image/*"><small class="text-muted">PNG, JPG</small></div>
                     </div>
+                    <!-- زر النسخ الاحتياطي -->
+<div class="card mt-4">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0"><i class="fas fa-database"></i> النسخ الاحتياطي لقاعدة البيانات</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted">قم بتحميل نسخة كاملة من قاعدة البيانات (بما في ذلك الكتب، العملاء، والفواتير) لحفظها على جهازك.</p>
+        <a href="{{ url_for('backup_database') }}" class="btn btn-success">
+            <i class="fas fa-download"></i> تحميل نسخة احتياطية الآن
+        </a>
+        <small class="d-block mt-2 text-muted">سيتم حفظ الملف باسم: pos_backup_YYYY-MM-DD_HH-MM-SS.db</small>
+    </div>
+</div>
 
                     <div class="text-end mt-4"><button type="submit" class="btn btn-primary btn-lg px-5"><i class="fas fa-save"></i> حفظ الإعدادات</button></div>
                 </form>
