@@ -219,7 +219,14 @@
                 <tr id="qDiscRow" style="display:none;"><td style="color:#d9534f;">Discount</td><td id="qDisc" style="color:#d9534f;"></td></tr>
                 <tr><td>VAT (5%)</td><td id="qTax"></td></tr>
                 <tr id="qDelRow" style="display:none;"><td style="color:#17a2b8;">Delivery</td><td id="qDel" style="color:#17a2b8;"></td></tr>
-                <tr class="total-row"><td>Total</td><td id="qTotal"></td></tr>
+               <tr class="total-row">
+    <td>Total Amount in Words</td>
+    <td colspan="2" style="text-align: left; font-style: italic; color: #555;" id="qTotalWords"></td>
+</tr>
+<tr class="total-row" style="background: #2c3e50; color: white; font-weight: bold;">
+    <td>Total</td>
+    <td colspan="2" style="text-align: right;" id="qTotal"></td>
+</tr>
             </table>
         </div>
     </div>
@@ -342,6 +349,65 @@ window.updateQty = function(i, v) { const q = parseInt(v)||1; if(q>cart[i].stock
 window.removeItem = function(i) { cart.splice(i,1); saveCart(); renderCart(); };
 window.clearCart = function() { if(confirm('تفريغ السلة؟')){cart=[];saveCart();renderCart();} };
 
+// دالة تحويل الأرقام إلى كلمات إنجليزية
+function numberToWords(num) {
+    if (num === 0) return 'Zero';
+    
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    
+    let words = '';
+    let integerPart = Math.floor(num);
+    let decimalPart = Math.round((num - integerPart) * 100);
+    
+    // تحويل الآلاف
+    if (integerPart >= 1000000) {
+        words += convertHundreds(Math.floor(integerPart / 1000000)) + ' Million ';
+        integerPart %= 1000000;
+    }
+    if (integerPart >= 1000) {
+        words += convertHundreds(Math.floor(integerPart / 1000)) + ' Thousand ';
+        integerPart %= 1000;
+    }
+    if (integerPart > 0) {
+        words += convertHundreds(integerPart);
+    }
+    
+    // إضافة الكسور (Cents)
+    let finalWords = words.trim();
+    if (decimalPart > 0) {
+        finalWords += ' and ' + decimalPart + '/100';
+    }
+    
+    return finalWords;
+}
+
+// دالة مساعدة لتحويل المئات
+function convertHundreds(num) {
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    
+    let words = '';
+    
+    if (num >= 100) {
+        words += ones[Math.floor(num / 100)] + ' Hundred ';
+        num %= 100;
+    }
+    if (num >= 20) {
+        words += tens[Math.floor(num / 10)] + ' ';
+        num %= 10;
+    } else if (num >= 10) {
+        words += teens[num - 10] + ' ';
+        num = 0;
+    }
+    if (num > 0) {
+        words += ones[num] + ' ';
+    }
+    
+    return words;
+}
 function calcTotal() {
     // حساب المجموع الفرعي
     const sub = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
@@ -384,22 +450,25 @@ window.toggleExportButtons = function() {
 
 window.generateQuotationPDF = function() {
     if (cart.length === 0) { alert('السلة فارغة!'); return; }
-    calcTotal(); // تأكد من تحديث الحسابات أولاً
+    calcTotal(); 
     
-    // جلب القيم من الواجهة
+    // 1️⃣ تعريف المتغيرات الأساسية أولاً
     const qRef = 'QUO-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(1000 + Math.random() * 9000);
     const qDate = new Date().toLocaleDateString('ar-EG');
     const client = document.getElementById('customerSelect').options[document.getElementById('customerSelect').selectedIndex].text;
-    
     const sub = parseFloat(document.getElementById('subTotal').textContent);
     const discPct = parseFloat(document.getElementById('discountPct').value) || 0;
     const cashDisc = parseFloat(document.getElementById('cashDiscount').value) || 0;
     const delivery = parseFloat(document.getElementById('deliveryFee').value) || 0;
-    
-    // ✅ استخدام قيمة الضريبة المحسوبة فعلياً واحترام حالة التفعيل
     const applyTax = document.getElementById('applyTax').checked;
     const tax = applyTax ? parseFloat(document.getElementById('tax').textContent) : 0;
+    
+    // ✅ grand يجب أن يُعرف قبل استخدامه
     const grand = parseFloat(document.getElementById('grandTotal').textContent);
+    
+    // ✅ تحويل المبلغ لكلمات إنجليزية (لا يظهر خط أحمر لأن الدالة مُعرفة في أعلى الملف)
+    const amountInWords = numberToWords(grand);
+    const currencyName = (settings.currency === 'د.إ') ? 'AED' : settings.currency;
 
     // تعبئة بيانات الرأس
     document.getElementById('qRef').textContent = qRef;
@@ -414,24 +483,17 @@ window.generateQuotationPDF = function() {
     document.getElementById('qBankIban').textContent = settings.bank.iban;
     document.getElementById('qBankName').textContent = settings.bank.name;
 
-    // ✅ بناء جدول العناصر بحسابات صحيحة
+    // بناء جدول العناصر
     let itemsHTML = '';
     cart.forEach((item, i) => {
-        // حساب خصم العنصر (نسبة من السعر × الكمية)
         const itemDisc = (item.price * item.qty) * (discPct / 100);
-        // صافي سعر العنصر بعد الخصم
         const net = (item.price * item.qty) - itemDisc;
-        // ضريبة العنصر (فقط إذا كانت مفعلة)
         const taxAmt = applyTax ? (net * (parseFloat('{{ settings.tax_rate or 5 }}') / 100)) : 0;
-        // إجمالي سطر العنصر
         const rowTotal = net + taxAmt;
 
         itemsHTML += `<tr>
             <td>${i+1}</td>
-            <td class="desc-cell">
-                <span class="item-title">${item.title}</span>
-                <span class="item-isbn">ISBN: ${item.isbn || 'N/A'}</span>
-            </td>
+            <td class="desc-cell"><span class="item-title">${item.title}</span><span class="item-isbn">ISBN: ${item.isbn || 'N/A'}</span></td>
             <td>${item.qty}</td>
             <td>${item.price.toFixed(2)}</td>
             <td style="color:#d9534f;">${itemDisc.toFixed(2)}</td>
@@ -443,36 +505,36 @@ window.generateQuotationPDF = function() {
     });
     document.getElementById('qItems').innerHTML = itemsHTML;
     
-    // ✅ تحديث ملخص الأسعار
+    // تحديث الملخص
     document.getElementById('qSub').textContent = sub.toFixed(2) + ' ' + settings.currency;
-    
     const discRow = document.getElementById('qDiscRow');
     if(discPct > 0 || cashDisc > 0) {
         discRow.style.display = 'table-row';
         document.getElementById('qDisc').textContent = '-' + ((sub * discPct/100) + cashDisc).toFixed(2);
     } else { discRow.style.display = 'none'; }
     
-    // إظهار الضريبة فقط إذا كانت مفعلة
     const taxRow = document.getElementById('qTax').closest('tr');
     if(applyTax && tax > 0) {
         taxRow.style.display = 'table-row';
         document.getElementById('qTax').textContent = tax + ' ' + settings.currency;
-    } else {
-        taxRow.style.display = 'none';
-    }
+    } else { taxRow.style.display = 'none'; }
     
     const delRow = document.getElementById('qDelRow');
     if(delivery > 0) { delRow.style.display = 'table-row'; document.getElementById('qDel').textContent = '+' + delivery.toFixed(2); } else { delRow.style.display = 'none'; }
     
-    document.getElementById('qTotal').textContent = grand + ' ' + settings.currency;
+    // ✅ عرض المبلغ الرقمي + المبلغ بالحروف
+    document.getElementById('qTotal').innerHTML = `
+        <div style="font-weight:bold;">${grand.toFixed(2)} ${currencyName}</div>
+        <div style="font-size:8pt; color:#666; margin-top:3px; font-style:italic;">${amountInWords} ${currencyName} Only</div>
+    `;
 
-    // إنشاء الملف
+    // إنشاء الـ PDF
     const element = document.getElementById('quotationTemplate');
     element.style.display = 'block';
     
     const opt = {
         margin: [8, 8, 8, 8],
-        filename: `عرض_أسعار_${qRef}.pdf`,
+        filename: `Quotation_${qRef}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, logging: false },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
@@ -482,7 +544,6 @@ window.generateQuotationPDF = function() {
     html2pdf().set(opt).from(element).save().then(() => { element.style.display = 'none'; })
     .catch(err => { console.error(err); element.style.display = 'none'; alert('خطأ في إنشاء PDF'); });
 };
-
 window.generateQuotationExcel = function() {
     if (cart.length === 0) { alert('السلة فارغة!'); return; }
     calcTotal();
