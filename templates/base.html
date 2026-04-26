@@ -161,13 +161,10 @@
             <li class="nav-item"><a class="nav-link {% if request.endpoint == 'inventory' %}active{% endif %}" href="{{ url_for('inventory') }}"><i class="fas fa-boxes"></i> المخزون</a></li>
             <!-- 📦 قسم الموردين والناشرين (موحد) -->
 <li class="nav-item">
-    <a class="nav-link {% if request.endpoint in ['suppliers', 'publishers'] %}active{% endif %}" href="{{ url_for('suppliers') }}">
-        <i class="fas fa-truck-loading"></i> الموردين / الناشرين
+<a class="nav-link {% if request.endpoint == 'publishers' %}active{% endif %}" href="{{ url_for('publishers') }}">        <i class="fas fa-truck-loading"></i> الموردين / الناشرين
     </a>
-</li>
-            <li class="nav-item"><a class="nav-link {% if request.endpoint == 'purchase_invoices' %}active{% endif %}" href="{{ url_for('purchase_invoices') }}"><i class="fas fa-file-invoice"></i> فواتير الشراء</a></li>
+    </li>
             <li class="nav-item"><a class="nav-link {% if request.endpoint == 'transfer_history' %}active{% endif %}" href="{{ url_for('transfer_history') }}"><i class="fas fa-exchange-alt"></i> سجل التحويلات<span class="notification-badge" id="transferBadge" style="display:none;">0</span></a></li>
-            
             <div class="sidebar-divider"></div><div class="sidebar-label">المحاسبة</div>
             <li class="nav-item"><a class="nav-link {% if request.endpoint == 'accounts' %}active{% endif %}" href="{{ url_for('accounts') }}"><i class="fas fa-sitemap"></i> شجرة الحسابات</a></li>
             <li class="nav-item"><a class="nav-link {% if request.endpoint == 'expenses' %}active{% endif %}" href="{{ url_for('expenses') }}"><i class="fas fa-receipt"></i> المصروفات</a></li>

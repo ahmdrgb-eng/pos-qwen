@@ -1,52 +1,43 @@
 {% extends "base.html" %}
-{% block title %}إدارة الناشرين{% endblock %}
-{% block page_title %}إدارة الناشرين{% endblock %}
+{% block title %}الناشرون / الموردون{% endblock %}
 {% block content %}
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="fas fa-building text-primary"></i> قائمة الناشرين</h5>
-        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPublisherModal"><i class="fas fa-plus"></i> إضافة ناشر</button>
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>📚 الناشرون / الموردون</h2>
+        <!-- يمكنك إضافة زر لإضافة ناشر جديد هنا لاحقاً -->
     </div>
-    <div class="card-body">
-        {% if publishers %}
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
-                    <tr><th>#</th><th>الاسم</th><th>الهاتف</th><th class="text-center">فواتير الكتب</th><th>إجراءات</th></tr>
+    
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            {% if publishers %}
+            <table class="table table-striped table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th>اسم الناشر</th>
+                        <th>الهاتف</th>
+                        <th>البريد الإلكتروني</th>
+                        <th>العنوان</th>
+                    </tr>
                 </thead>
                 <tbody>
-                    {% for item in publishers %}
+                    {% for p in publishers %}
                     <tr>
-                        <td>{{ item.publisher.id }}</td>
-                        <td>
-                            <a href="{{ url_for('publisher_invoices', id=item.publisher.id) }}" class="text-decoration-none fw-bold text-primary">
-                                <i class="fas fa-truck-loading me-1"></i> {{ item.publisher.name }}
-                            </a>
-                        </td>
-                        <td>{{ item.publisher.phone or '-' }}</td>
-                        <td class="text-center"><span class="badge bg-info text-dark">{{ item.inv_count }} فاتورة</span></td>
-                        <td><a href="{{ url_for('publisher_statement', id=item.publisher.id) }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-receipt"></i> كشف حساب</a></td>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ p.name }}</td>
+                        <td>{{ p.phone or '-' }}</td>
+                        <td>{{ p.email or '-' }}</td>
+                        <td>{{ p.address or '-' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
-        </div>
-        {% else %}
-        <div class="text-center text-muted py-5"><i class="fas fa-building fa-3x mb-3"></i><p>لا يوجد ناشرين مسجلين</p></div>
-        {% endif %}
-    </div>
-</div>
-<div class="modal fade" id="addPublisherModal" tabindex="-1">
-    <div class="modal-dialog"><div class="modal-content">
-        <form method="POST" action="{{ url_for('add_publisher') }}">
-            <div class="modal-header"><h5 class="modal-title">إضافة ناشر</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">
-                <div class="mb-3"><label class="form-label">الاسم *</label><input type="text" name="name" class="form-control" required></div>
-                <div class="mb-3"><label class="form-label">الهاتف</label><input type="text" name="phone" class="form-control"></div>
-                <div class="mb-3"><label class="form-label">البريد</label><input type="email" name="email" class="form-control"></div>
+            {% else %}
+            <div class="p-4 text-center text-muted">
+                لا يوجد ناشرون مسجلون حالياً.
             </div>
-            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button><button type="submit" class="btn btn-primary">حفظ</button></div>
-        </form>
-    </div></div>
+            {% endif %}
+        </div>
+    </div>
 </div>
 {% endblock %}
